@@ -2,7 +2,7 @@
 
 Automated detection of vine row positions, orientation, and spacing from aerial/satellite imagery. Given a vineyard block boundary polygon, the pipeline fetches aerial tiles, isolates the block region, and runs a 7-stage computer vision pipeline to detect individual row centerlines as curved polylines.
 
-Used in production as part of [Cordyn](https://cordyn.app) — a vineyard management platform — to auto-populate block geometry for spray planning, planting records, and compliance tracking.
+Used in production as part of a personal project to auto-populate block geometry for spray planning, planting records, and compliance tracking.
 
 ## Results
 
