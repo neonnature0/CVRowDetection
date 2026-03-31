@@ -1,20 +1,117 @@
-# CV Row Detection from Aerial Imagery
+# Vineyard Row Detection from Aerial Imagery
 
-Feasibility prototype for detecting vine row orientation and spacing from aerial/satellite imagery using computer vision. Given a vineyard block boundary polygon, the pipeline fetches aerial tiles, isolates the block region, and applies two independent detection approaches (Hough transform and FFT analysis) to measure row angle and spacing. Results are compared against ground truth data from the database.
+Automated detection of vine row positions, orientation, and spacing from aerial/satellite imagery. Given a vineyard block boundary polygon, the pipeline fetches aerial tiles, isolates the block region, and runs a 7-stage computer vision pipeline to detect individual row centerlines as curved polylines.
+
+Used in production as part of [Cordyn](https://cordyn.app) — a vineyard management platform — to auto-populate block geometry for spray planning, planting records, and compliance tracking.
+
+## Results
+
+Tested on 12 vineyard blocks across 5 vineyards (New Zealand + Canada):
+
+| Metric | Score |
+|--------|-------|
+| **Mean F1** | 95.9% |
+| **Mean Precision** | 98.2% |
+| **Mean Recall** | 93.9% |
+| **Localization Error** | 0.107m |
+| **Blocks with F1 > 95%** | 7 / 11 |
+
+Evaluated against human-annotated ground truth using bipartite (Hungarian) matching.
+
+## How It Works
+
+The pipeline runs 7 sequential stages:
+
+```
+Input: Block boundary polygon (GeoJSON)
+  |
+  v
+Stage 0: Tile Acquisition -----> Fetch aerial tiles, stitch, mask to polygon
+Stage 1: Multi-Channel Preproc -> ExG, luminance, normalized vegetation, structure tensor
+Stage 2: 2D FFT Orientation ----> Coarse row angle + spacing from frequency domain
+Stage 3: Ridge Likelihood ------> Per-pixel row probability map (Gabor filter or U-Net)
+Stage 4: Candidate Extraction --> Strip-based adaptive peak finding along perpendicular axis
+Stage 5: Row Tracking ----------> Bidirectional Hungarian assignment across strips
+Stage 6: Centerline Fitting ----> Cubic smoothing splines + geographic coordinate conversion
+Stage 7: Post-Processing -------> Spacing stats, quality flags, confidence scoring
+  |
+  v
+Output: List of FittedRow objects (polyline centerlines in pixel + geo coords)
+```
+
+### Stage 3: Ridge Detection Modes
+
+| Mode | Method | Best For |
+|------|--------|----------|
+| `gabor` (default) | Gabor bandpass filter tuned to row frequency | High-contrast blocks, bare soil inter-rows |
+| `ml` | U-Net (MobileNet-v2 encoder) trained on annotated data | Low-contrast blocks, grassed inter-rows |
+| `ml_ensemble` | Max of Gabor and U-Net per pixel | Mixed conditions |
+| `hessian` | Hessian eigenvalue ridge detection on all channels | Alternative classical method |
+| `ensemble` | Max of Hessian and Gabor | Broader classical coverage |
+
+## Tile Sources
+
+Aerial imagery is automatically selected by longitude:
+
+| Source | Coverage | Resolution | API Key Required |
+|--------|----------|-----------|-----------------|
+| **LINZ** | New Zealand | ~0.1m/px (zoom 20) | Yes (free from [data.linz.govt.nz](https://data.linz.govt.nz/)) |
+| **Kelowna** | Okanagan, BC, Canada | ~0.2m/px (zoom 19) | No |
+| **ArcGIS World Imagery** | Global fallback | ~0.3m/px (zoom 19) | No |
+
+## Project Structure
+
+```
+cv-row-detection/
+|
+|-- vinerow/                    # Production pipeline package
+|   |-- acquisition/            #   Tile fetching, geo utilities
+|   |-- preprocessing/          #   Multi-channel image processing
+|   |-- orientation/            #   2D FFT angle/spacing detection
+|   |-- ridge/                  #   Ridge likelihood (Gabor + ML modes)
+|   |-- candidates/             #   Strip-based candidate extraction
+|   |-- tracking/               #   Hungarian row tracking
+|   |-- fitting/                #   Spline centerline fitting
+|   |-- postprocessing/         #   Metrics, quality flags
+|   |-- config.py               #   All tunable parameters
+|   |-- pipeline.py             #   Main orchestrator
+|   +-- types.py                #   Data types (FittedRow, etc.)
+|
+|-- training/                   # ML training pipeline
+|   |-- dataset.py              #   PyTorch Dataset + augmentations
+|   |-- model.py                #   U-Net model definition
+|   |-- train.py                #   Training loop (BCE + Dice loss)
+|   |-- predict.py              #   Full-block patch-stitched inference
+|   +-- checkpoints/            #   Saved model weights
+|
+|-- dataset/
+|   |-- annotations/            #   Human-verified row positions (JSON)
+|   |-- images/                 #   Cached block aerial images + masks
+|   +-- training/               #   Generated patches + targets for ML
+|
+|-- cli.py                      # Command-line interface
+|-- benchmark.py                # Regression benchmark (all blocks)
+|-- evaluate_gt.py              # Ground truth evaluation (P/R/F1)
+|-- annotate.py                 # Interactive annotation tool (matplotlib)
+|-- visual_verify.py            # Generate overlay verification images
+|-- generate_training_data.py   # Convert annotations to ML training patches
+|-- prepare_dataset.py          # Prepare annotation JSONs from pipeline output
++-- test_blocks.json            # Block definitions (boundaries + ground truth)
+```
 
 ## Setup
 
-### 1. Create a virtual environment
+### 1. Create virtual environment
 
 ```bash
 cd apps/web/scripts/cv-row-detection
-python -m venv .venv
+python -m venv venv        # Use Python 3.11 or 3.12 (not 3.14 — scipy issues)
 
 # Windows
-.venv\Scripts\activate
+venv\Scripts\activate
 
 # macOS/Linux
-source .venv/bin/activate
+source venv/bin/activate
 ```
 
 ### 2. Install dependencies
@@ -23,203 +120,124 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment variables
+For ML training/inference (optional):
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install segmentation-models-pytorch albumentations
+```
+
+### 3. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and fill in:
-
 | Variable | Required For | Description |
 |----------|-------------|-------------|
 | `LINZ_API_KEY` | NZ imagery | Free API key from [LINZ Data Service](https://data.linz.govt.nz/) |
-| `SUPABASE_URL` | --fetch-blocks | Supabase project URL (already set in example) |
-| `SUPABASE_SERVICE_KEY` | --fetch-blocks | Supabase service role key (from project settings) |
 
-ArcGIS World Imagery and Kelowna sources do not require API keys.
-
-## Populating Test Data
-
-### Option A: Fetch from Supabase
-
-```bash
-python detect_rows.py --fetch-blocks
-python detect_rows.py --fetch-blocks --org-id <your-org-uuid>
-```
-
-This queries the database for blocks with boundaries and row spacing ground truth, saving them to `test_blocks.json`. Note: block boundaries are PostGIS geometry columns, so this requires either the Supabase `/pg` SQL endpoint or a custom database function. If fetching fails, use Option B.
-
-### Option B: Manual test_blocks.json
-
-Create or edit `test_blocks.json` with your block data:
-
-```json
-{
-  "blocks": [
-    {
-      "name": "B3",
-      "vineyard_name": "Home Vineyard",
-      "boundary": {
-        "type": "Polygon",
-        "coordinates": [[[173.123, -41.456], [173.124, -41.456], [173.124, -41.457], [173.123, -41.457], [173.123, -41.456]]]
-      },
-      "row_spacing_m": 2.4,
-      "row_orientation": "N-S",
-      "row_angle": 87.5,
-      "row_count": 42
-    }
-  ]
-}
-```
-
-Ground truth fields (`row_spacing_m`, `row_orientation`, `row_angle`, `row_count`) are optional. If provided, detection results will be compared against them.
-
-### Option C: Custom GeoJSON
-
-```bash
-python detect_rows.py --geojson my_boundary.geojson --source arcgis
-```
-
-The GeoJSON can be a bare `Polygon`, a `Feature`, or a `FeatureCollection`. Ground truth can be embedded in feature properties using the same field names.
+ArcGIS and Kelowna sources do not require API keys.
 
 ## Usage
 
-### Single block
+### Run the pipeline on a single block
 
 ```bash
-python detect_rows.py --block "B3" --source linz --zoom 20
-python detect_rows.py --block "B3" --approach fft
+python cli.py --block "Block C"
+python cli.py --block "B10" --ridge-mode gabor
 ```
 
-### All blocks
+### Benchmark all blocks
 
 ```bash
-python detect_rows.py --all
-python detect_rows.py --all --approach both --source auto --verbose
+python benchmark.py
+python benchmark.py --blocks "Block C,B10" --ridge-mode gabor
 ```
 
-### Custom GeoJSON boundary
+### Evaluate against ground truth
 
 ```bash
-python detect_rows.py --geojson boundary.geojson --source arcgis --zoom 19
+python evaluate_gt.py --status complete --report
 ```
 
-### CLI options
+Produces per-block precision/recall/F1 table + overlay images in `dataset/evaluation/`.
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--block NAME` | — | Process a single block by name |
-| `--all` | — | Process all blocks in test_blocks.json |
-| `--geojson PATH` | — | Process a custom GeoJSON file |
-| `--fetch-blocks` | — | Populate test_blocks.json from Supabase |
-| `--org-id UUID` | — | Filter by organisation (with --fetch-blocks) |
-| `--source {linz,arcgis,kelowna,auto}` | auto | Tile imagery source |
-| `--zoom INT` | source-dependent | Override zoom level |
-| `--approach {hough,fft,both}` | both | Detection approach |
-| `--output-dir DIR` | output/ | Debug output directory |
-| `--no-cache` | false | Skip tile disk cache |
-| `--verbose` | false | Enable debug logging |
+### Visual verification
 
-## Interpreting Results
+```bash
+python visual_verify.py --overlay-only
+python visual_verify.py --blocks "Main Block" --overlay-only
+```
 
-### Console output
+Generates row overlay images in `output/visual_verify/`.
 
-The results table shows detected angle, spacing, and row count alongside ground truth values and error metrics. A summary at the bottom reports mean/max errors and success rate.
+### Annotate blocks
 
-### Debug images
+```bash
+python annotate.py --block "Block C"
+```
 
-For each block, a subdirectory is created under `output/` containing:
+Interactive matplotlib tool for correcting row positions. Controls:
 
-| File | Description |
-|------|-------------|
-| `01_original.png` | Masked aerial image (block boundary applied) |
-| `02_vegetation.png` | Excess Green (ExG) vegetation index as a heatmap |
-| `03_edges.png` | Canny edge detection output |
-| `04_hough_lines.png` | Detected Hough lines overlaid on original image |
-| `05_fft_angle_response.png` | Angle sweep plot showing directional FFT response |
-| `06_fft_spectrum.png` | 1D FFT spectrum with peak frequency marked |
-| `07_comparison.png` | Side-by-side summary of all pipeline stages |
+| Action | Input |
+|--------|-------|
+| Select row | Left-click near row |
+| Drag control point | Left-click + drag on selected row's point |
+| Pan | Right-drag |
+| Zoom | Scroll wheel |
+| Add row | Press `A`, click on image |
+| Delete row | Press `D`, click on row |
+| Insert control point | Press `I` or right-click on selected row |
+| Remove control point | Press `X` or `Delete` near point |
+| Save | Press `S` |
+| Mark complete | Press `M` |
 
-### Results summary
+## ML Training
 
-A markdown file `output/results_summary.md` is generated with a comparison table and aggregate statistics.
+### Generate training data
 
-## Technical Approach
+```bash
+python generate_training_data.py --patch-size 256 --overlap 0.25
+```
 
-### Preprocessing
+Produces paired image patches and row-likelihood heatmaps from annotated blocks.
 
-1. Fetch aerial tiles covering the block bounding box and stitch into a single image.
-2. Apply the block polygon as a mask (zero out pixels outside the boundary).
-3. Compute Excess Green Index (ExG = 2G - R - B) to separate vine canopy from soil.
-4. Apply CLAHE contrast enhancement.
-5. Run Canny edge detection.
+### Train the U-Net
 
-### Hough Transform (line detection)
+```bash
+python -m training.train --epochs 100 --batch-size 8 --lr 1e-4 --patience 20
+```
 
-Applies probabilistic Hough line detection to the edge map. Detected line segments are clustered by angle to find the dominant orientation. Spacing is estimated from the perpendicular distances between parallel lines.
+Trains a U-Net with MobileNet-v2 encoder on CPU. Checkpoints saved to `training/checkpoints/`.
 
-Strengths: intuitive, works well with clearly defined row edges.
-Weaknesses: sensitive to noise, struggles with incomplete rows or canopy overlap.
+### Evaluate trained model
 
-### FFT Analysis (frequency domain)
+```bash
+python -m training.train --run-test --checkpoint training/checkpoints/best_model.pth
+```
 
-Performs an angular sweep of 1D FFT slices through the 2D frequency spectrum. At each angle, the FFT magnitude profile reveals periodic spacing as a peak frequency. The angle with the strongest periodic signal is selected as the row orientation, and the peak frequency is converted to row spacing.
+## Adding New Blocks
 
-Strengths: robust to noise, handles partial or gappy rows well.
-Weaknesses: requires sufficient image area for frequency resolution.
+1. Add the block boundary to `test_blocks.json` (GeoJSON polygon, `[longitude, latitude]` coordinate order)
+2. Run `python prepare_dataset.py` to fetch tiles and create annotation JSON
+3. Run `python annotate.py --block "YourBlock"` to correct row positions
+4. Run `python generate_training_data.py` to regenerate ML training patches
+5. Retrain with `python -m training.train`
 
-### Angle convention
+## Tech Stack
 
-- 0 degrees = rows running East-West (horizontal in image)
-- 90 degrees = rows running North-South (vertical in image)
-- Range is 0-180 degrees (180-degree ambiguity: rows look the same from either end)
+- **Python 3.11** with NumPy, SciPy, OpenCV
+- **PyTorch** + segmentation-models-pytorch (U-Net with MobileNet-v2 encoder)
+- **Albumentations** for training data augmentation
+- **Matplotlib** for the annotation tool
+- Aerial imagery from **LINZ** (NZ), **Kelowna Open Data** (Canada), **ArcGIS World Imagery** (global)
 
-Compass labels from the database (e.g., "N-S", "NE-SW") are mapped to this convention for ground truth comparison.
+## Key Algorithms
 
-## Success Criteria
-
-| Metric | Target |
-|--------|--------|
-| Row angle | Within 5 degrees of ground truth |
-| Row spacing | Within 0.3m of ground truth (roughly 15% for typical 2m spacing) |
-
-Both thresholds must be met simultaneously for a result to be counted as a success.
-
-## Test Results (2026-03-29)
-
-Tested on 5 vineyard blocks with known ground truth — 3 NZ blocks (LINZ tiles, zoom 20), 1 large NZ block (Opawa), and 1 Canadian block (Kelowna tiles, zoom 19).
-
-### Best results per block (picking whichever approach was better):
-
-| Block | Rows | Best Approach | Angle Error | Spacing Error | Spacing (m) | GT (m) | Pass? |
-|-------|------|--------------|------------|--------------|------------|--------|-------|
-| Block A (Brooklands) | 26 | Hough | 2.1° | 17.6% | 2.94 | 2.50 | Angle only |
-| Block C (Brooklands) | 110 | FFT | 0.2° | 0.9% | 2.48 | 2.50 | **PASS** |
-| Block D (Brooklands) | 111 | Hough angle | 4.7° | 31.4% | 3.29 | 2.50 | Angle only |
-| North Block (Opawa) | 251 | FFT | 0.0° | 0.5% | 2.79 | 2.81 | **PASS** |
-| B10 (The View, CA) | 39 | FFT | 0.3° | 0.8% | 2.72 | 2.70 | **PASS** |
-
-### Key findings:
-
-- **Angle detection: 4/5 blocks within ±5°** — exceeds the 3/4 target
-- **Spacing detection: 3/5 blocks within ±0.3m** — meets the 3/4 target
-- **FFT excels on blocks with >40 rows** — angle error <1°, spacing error <1%
-- **Hough provides consistent angle (~2-5° error)** but spacing is noisy (12-31%)
-- **FFT harmonic correction needed** — raw FFT often detects 2× row spacing (alternating row pattern), corrected by checking for a sub-harmonic peak at half the detected spacing
-- **Processing time**: Hough 0.1-4s, FFT 18-161s (depends on image size)
-
-### Recommended strategy for production integration:
-
-Use **FFT for angle + spacing** on blocks with sufficient area (>40 rows). Fall back to **Hough for angle only** on small blocks. Cross-validate when both approaches agree.
-
-## Known Limitations
-
-- **Imagery resolution**: At zoom 19 (ArcGIS), ground resolution is roughly 0.3 m/pixel at mid-latitudes. Row spacing of 2m is only 6-7 pixels apart, which is at the limit of reliable detection. Zoom 20+ (LINZ in NZ) gives roughly 0.15 m/pixel, which is much better.
-- **Seasonal variation**: Detection works best when vine canopy is visible (growing season). Dormant season imagery with bare trellis may have insufficient contrast.
-- **Young vines**: Recently planted blocks with small canopy may not show clear row patterns in aerial imagery.
-- **Non-uniform rows**: Blocks with variable row spacing, curved rows, or significant gaps will reduce confidence.
-- **Cloud/shadow**: Partial cloud cover or building shadows within the block can create false edges.
-- **Tile source availability**: LINZ provides the best resolution but only covers New Zealand. ArcGIS World Imagery has global coverage but lower resolution. Kelowna source is specific to that municipality.
-- **PostGIS boundary fetch**: The `--fetch-blocks` command may not work if the Supabase `/pg` SQL endpoint is unavailable. In that case, populate `test_blocks.json` manually or export boundaries from the app.
-- **Row count estimation**: Row count is derived from detected spacing and block width, so it inherits errors from both spacing detection and boundary measurement.
+- **2D FFT** for coarse orientation detection — periodic parallel rows produce conjugate peaks in the frequency domain whose polar coordinates encode angle and spacing
+- **Gabor bandpass filter** for ridge likelihood — tuned to the detected row frequency, with phase-independent energy envelope and oriented suppression
+- **Texture-based phase correction** — adaptive mechanism that detects when the Gabor locks onto inter-row features instead of vine canopy by comparing local texture at detected positions vs midpoints
+- **Harmonic resolution** — spectral tiebreaker that checks for half-period confusion (row-to-gap vs row-to-row spacing) using sub-harmonic power analysis
+- **Hungarian algorithm** for row tracking — bidirectional assignment from the densest strip, with position and strength cost weighting
+- **Douglas-Peucker simplification** for converting dense polylines to sparse control points in the annotation tool
