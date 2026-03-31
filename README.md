@@ -241,3 +241,80 @@ python -m training.train --run-test --checkpoint training/checkpoints/best_model
 - **Harmonic resolution** — spectral tiebreaker that checks for half-period confusion (row-to-gap vs row-to-row spacing) using sub-harmonic power analysis
 - **Hungarian algorithm** for row tracking — bidirectional assignment from the densest strip, with position and strength cost weighting
 - **Douglas-Peucker simplification** for converting dense polylines to sparse control points in the annotation tool
+
+---
+
+## Project History
+
+This project evolved through several generations. The legacy files are kept in the repo for reference.
+
+### Generation 1: Classical Prototypes (early 2026)
+
+The original approach tried two independent methods to detect row angle and spacing:
+
+**Hough Transform** (`hough_detector.py`) — ran Canny edge detection on the aerial image, then probabilistic Hough line detection to find line segments. Clustered segments by angle to find the dominant orientation. Spacing was estimated from perpendicular distances between parallel lines.
+
+- Strengths: simple, intuitive
+- Problems: extremely sensitive to noise, struggled with incomplete rows or canopy overlap, spacing accuracy was poor (12-31% error)
+- **Verdict: abandoned** — too noisy for production use
+
+**1D FFT Angle Sweep** (`fft_detector.py`) — took 1D FFT slices through the 2D frequency spectrum at many angles. The angle with the strongest periodic signal was the row orientation. Peak frequency gave spacing.
+
+- Strengths: robust to noise, handled partial rows well
+- Problems: slow (angular sweep is O(n) in angle resolution), couldn't handle curved rows
+- **Verdict: replaced** by 2D FFT
+
+**2D FFT** (`fft2d_detector.py`) — single 2D FFT on the whole image. Periodic parallel rows produce a conjugate pair of peaks whose polar coordinates directly encode angle and spacing. Much faster and more accurate than the 1D sweep.
+
+- Result: angle error <1 degree, spacing error <1% on blocks with >40 rows
+- **Verdict: kept** — absorbed into `vinerow/orientation/fft2d.py`
+
+Supporting files from this generation:
+- `detect_rows.py` — monolithic pipeline that orchestrated Hough + FFT
+- `image_preprocessor.py` — ExG vegetation index + CLAHE contrast enhancement
+- `row_locator.py` — grid-stamping approach that placed a fixed-spacing grid at the detected angle
+- `tile_fetcher.py`, `geo_utils.py` — tile fetching and coordinate conversion (moved into `vinerow/acquisition/`)
+- `debug_visualizer.py` — generated debug images for the old pipeline
+- `test_angle_conversion.py` — one-off unit test for angle conventions
+
+### Generation 2: Production Pipeline (`vinerow/` package)
+
+Rebuilt from scratch as a modular 7-stage pipeline. Key improvements over Gen 1:
+
+- **Multi-channel preprocessing** instead of just ExG — luminance, normalized vegetation, structure tensor anisotropy, with quality-weighted fusion
+- **Gabor bandpass filter** instead of Hessian-only ridge detection — tuned to the FFT-detected row frequency for much better selectivity
+- **Strip-based candidate extraction** instead of grid stamping — no spacing assumption, finds peaks purely from the data
+- **Hungarian tracking** instead of nearest-neighbor — globally optimal row-to-candidate assignment, handles gaps and missing detections
+- **Spline fitting** instead of straight lines — models curved rows with cubic smoothing splines
+- **Harmonic resolution** — detects and corrects half-period confusion in the FFT (row-to-gap vs row-to-row)
+- **Phase correction** — texture-based adaptive check that detects when the Gabor locks onto inter-row grass instead of vine canopy
+
+Result: 95.9% mean F1 across 11 blocks, evaluated against human-annotated ground truth.
+
+### Generation 3: ML Ridge Detection (in progress)
+
+Training a lightweight U-Net (MobileNet-v2 encoder, ~6.6M params) to replace the Gabor filter in Stage 3. The model takes RGB image patches as input and predicts a per-pixel row-likelihood heatmap. Everything else in the pipeline stays the same.
+
+Motivation: the Gabor filter struggles on blocks where both vine canopy and inter-row grass are green (low spectral contrast). A learned model can pick up on subtler texture and color patterns that hand-crafted filters miss.
+
+- Training data: 1,988 patches (256x256) from 11 annotated blocks
+- Architecture: U-Net with MobileNet-v2 encoder, BCE + Dice loss
+- Training: CPU-only, ~12 min/epoch, early stopping
+
+### Legacy Files Reference
+
+These files are from Generation 1 and are **no longer used** by the active pipeline. They're kept for historical reference:
+
+| File | Gen | What It Did | Why It Was Replaced |
+|------|-----|------------|-------------------|
+| `hough_detector.py` | 1 | Hough line detection for row angle | Too noisy, poor spacing accuracy |
+| `fft_detector.py` | 1 | 1D FFT angle sweep | Slow, replaced by 2D FFT |
+| `fft2d_detector.py` | 1 | 2D FFT standalone prototype | Absorbed into `vinerow/orientation/fft2d.py` |
+| `image_preprocessor.py` | 1 | ExG + CLAHE preprocessing | Replaced by multi-channel fusion in `vinerow/preprocessing/` |
+| `detect_rows.py` | 1 | Monolithic pipeline orchestrator | Replaced by modular `vinerow/pipeline.py` |
+| `row_locator.py` | 1 | Fixed-grid row position stamping | Replaced by adaptive candidate extraction + tracking |
+| `tile_fetcher.py` | 1 | Tile fetching (standalone) | Moved to `vinerow/acquisition/tile_fetcher.py` |
+| `geo_utils.py` | 1 | Geo coordinate utilities (standalone) | Moved to `vinerow/acquisition/geo_utils.py` |
+| `debug_visualizer.py` | 1 | Debug image generation | Replaced by `vinerow/debug/artifacts.py` |
+| `test_angle_conversion.py` | 1 | Unit test for angle conventions | One-off test, not needed |
+| `visual_verify_new.py` | - | Earlier draft of visual_verify.py | Superseded by `visual_verify.py` |
