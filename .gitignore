@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.env
+venv/
+venv_314_backup/
+
+# Large data — don't push to git
+dataset/images/
+dataset/training/patches/
+dataset/training/targets/
+output/
+
+# Model checkpoints (large binary files)
+training/checkpoints/*.pth
+training/checkpoints/*.onnx
+
+# Keep these (small, useful):
+# dataset/annotations/*.json
+# dataset/training/splits.json
+# training/checkpoints/training_config.json
+# training/checkpoints/training_curves.png

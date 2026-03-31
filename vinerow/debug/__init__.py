@@ -1,0 +1,1 @@
+"""Debug visualization and diagnostics."""

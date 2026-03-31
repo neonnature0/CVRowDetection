@@ -1,0 +1,1 @@
+"""Local row candidate extraction."""

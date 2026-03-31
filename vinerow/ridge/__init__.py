@@ -1,0 +1,1 @@
+"""Ridge-likelihood map generation."""

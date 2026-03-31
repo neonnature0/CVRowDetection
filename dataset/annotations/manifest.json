@@ -1,0 +1,83 @@
+{
+  "updated_at": "2026-03-29T19:41:29.479735+00:00",
+  "total_blocks": 11,
+  "blocks": [
+    {
+      "block": "B10",
+      "vineyard": "The View",
+      "file": "dataset\\annotations\\The_View_B10.json",
+      "rows": 36,
+      "status": "pending"
+    },
+    {
+      "block": "Block A",
+      "vineyard": "Brooklands",
+      "file": "dataset\\annotations\\Brooklands_Block_A.json",
+      "rows": 24,
+      "status": "pending"
+    },
+    {
+      "block": "Block B",
+      "vineyard": "Brooklands",
+      "file": "dataset\\annotations\\Brooklands_Block_B.json",
+      "rows": 47,
+      "status": "pending"
+    },
+    {
+      "block": "Block C",
+      "vineyard": "Brooklands",
+      "file": "dataset\\annotations\\Brooklands_Block_C.json",
+      "rows": 88,
+      "status": "pending"
+    },
+    {
+      "block": "Block D",
+      "vineyard": "Brooklands",
+      "file": "dataset\\annotations\\Brooklands_Block_D.json",
+      "rows": 110,
+      "status": "pending"
+    },
+    {
+      "block": "Block D2",
+      "vineyard": "Brooklands",
+      "file": "dataset\\annotations\\Brooklands_Block_D2.json",
+      "rows": 106,
+      "status": "pending"
+    },
+    {
+      "block": "North Block",
+      "vineyard": "Opawa",
+      "file": "dataset\\annotations\\Opawa_North_Block.json",
+      "rows": 247,
+      "status": "pending"
+    },
+    {
+      "block": "South Block",
+      "vineyard": "Opawa",
+      "file": "dataset\\annotations\\Opawa_South_Block.json",
+      "rows": 283,
+      "status": "pending"
+    },
+    {
+      "block": "Block A",
+      "vineyard": "Other Vineyard",
+      "file": "dataset\\annotations\\Other_Vineyard_Block_A.json",
+      "rows": 90,
+      "status": "pending"
+    },
+    {
+      "block": "B12",
+      "vineyard": "The View",
+      "file": "dataset\\annotations\\The_View_B12.json",
+      "rows": 53,
+      "status": "pending"
+    },
+    {
+      "block": "Main Block",
+      "vineyard": "Babich Henderson",
+      "file": "dataset\\annotations\\Babich_Henderson_Main_Block.json",
+      "rows": 86,
+      "status": "pending"
+    }
+  ]
+}

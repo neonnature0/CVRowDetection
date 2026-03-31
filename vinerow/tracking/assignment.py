@@ -1,0 +1,281 @@
+"""
+Row tracking via sequential linear assignment (Hungarian algorithm).
+
+Links candidates across strips into coherent row trajectories. Seeds from
+the densest strip (best coverage), then tracks forward and backward
+independently, merging the two passes for each seed row.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections import defaultdict
+
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+
+from vinerow.config import PipelineConfig
+from vinerow.types import CoarseOrientation, RowCandidate, RowTrajectory
+
+logger = logging.getLogger(__name__)
+
+
+class _Track:
+    """Internal mutable track state during sequential processing."""
+
+    def __init__(self, track_id: int, first_candidate: RowCandidate, n_strips: int):
+        self.track_id = track_id
+        self.candidates: list[RowCandidate | None] = [None] * n_strips
+        self.candidates[first_candidate.strip_index] = first_candidate
+        self.last_perp = first_candidate.perp_position
+        self.prev_perp = first_candidate.perp_position
+        self.birth_strip = first_candidate.strip_index
+        self.last_matched_strip = first_candidate.strip_index
+        self.consecutive_skips = 0
+        self.alive = True
+
+    @property
+    def predicted_perp(self) -> float:
+        """Linear extrapolation from last two matched positions."""
+        return self.last_perp + (self.last_perp - self.prev_perp)
+
+    def match(self, candidate: RowCandidate) -> None:
+        self.candidates[candidate.strip_index] = candidate
+        self.prev_perp = self.last_perp
+        self.last_perp = candidate.perp_position
+        self.last_matched_strip = candidate.strip_index
+        self.consecutive_skips = 0
+
+    def skip(self) -> None:
+        self.consecutive_skips += 1
+
+    def to_trajectory(self) -> RowTrajectory:
+        death = self.birth_strip
+        for i, c in enumerate(self.candidates):
+            if c is not None:
+                death = i
+        return RowTrajectory(
+            track_id=self.track_id,
+            candidates=list(self.candidates),
+            birth_strip=self.birth_strip,
+            death_strip=death,
+        )
+
+
+def _process_strip(
+    alive_tracks: list[_Track],
+    strip_cands: list[RowCandidate],
+    spacing_px: float,
+    skip_penalty: float,
+    birth_penalty: float,
+    max_skip_strips: int,
+    config: PipelineConfig,
+    all_tracks: list[_Track],
+    next_track_id: int,
+    n_strips: int,
+    allow_births: bool = True,
+) -> int:
+    """Process one strip: match candidates to tracks via Hungarian assignment.
+
+    Returns updated next_track_id.
+    """
+    if not alive_tracks and not strip_cands:
+        return next_track_id
+
+    if not alive_tracks:
+        if allow_births:
+            for c in strip_cands:
+                all_tracks.append(_Track(next_track_id, c, n_strips))
+                next_track_id += 1
+        return next_track_id
+
+    if not strip_cands:
+        for t in alive_tracks:
+            t.skip()
+            if t.consecutive_skips >= max_skip_strips:
+                t.alive = False
+        return next_track_id
+
+    n_tracks = len(alive_tracks)
+    n_cands = len(strip_cands)
+
+    # Augmented cost matrix
+    size = n_tracks + n_cands
+    cost = np.full((size, size), 1e9, dtype=np.float64)
+
+    # Real assignment costs
+    for i, track in enumerate(alive_tracks):
+        for j, cand in enumerate(strip_cands):
+            pos_cost = abs(track.predicted_perp - cand.perp_position)
+            strength_cost = config.strength_weight_factor * spacing_px * (1.0 - cand.strength)
+            cost[i, j] = config.position_weight * pos_cost + strength_cost
+
+    # Skip costs
+    for i in range(n_tracks):
+        cost[i, n_cands + i] = skip_penalty * (1 + alive_tracks[i].consecutive_skips * 0.5)
+
+    # Birth costs
+    for j in range(n_cands):
+        cost[n_tracks + j, j] = birth_penalty if allow_births else 1e9
+
+    # Dummy-to-dummy
+    for i in range(n_cands):
+        for j in range(n_tracks):
+            cost[n_tracks + i, n_cands + j] = 0.0
+
+    row_ind, col_ind = linear_sum_assignment(cost)
+
+    matched_tracks = set()
+    matched_cands = set()
+
+    for ri, ci in zip(row_ind, col_ind):
+        if ri < n_tracks and ci < n_cands:
+            track = alive_tracks[ri]
+            cand = strip_cands[ci]
+            pos_error = abs(track.last_perp - cand.perp_position)
+            if pos_error < 0.5 * spacing_px:
+                track.match(cand)
+                matched_tracks.add(ri)
+                matched_cands.add(ci)
+            else:
+                track.skip()
+                if track.consecutive_skips >= max_skip_strips:
+                    track.alive = False
+        elif ri < n_tracks and ci >= n_cands:
+            track = alive_tracks[ri]
+            if ri not in matched_tracks:
+                track.skip()
+                if track.consecutive_skips >= max_skip_strips:
+                    track.alive = False
+
+    # Birth new tracks for unmatched candidates
+    if allow_births:
+        for j, cand in enumerate(strip_cands):
+            if j not in matched_cands:
+                all_tracks.append(_Track(next_track_id, cand, n_strips))
+                next_track_id += 1
+
+    return next_track_id
+
+
+def _track_direction(
+    seed_cands: list[RowCandidate],
+    strip_order: list[int],
+    by_strip: dict[int, list[RowCandidate]],
+    n_strips: int,
+    spacing_px: float,
+    skip_penalty: float,
+    birth_penalty: float,
+    max_skip_strips: int,
+    config: PipelineConfig,
+) -> list[_Track]:
+    """Track one direction (forward or backward) from seed candidates."""
+    tracks: list[_Track] = []
+    next_id = 0
+    for c in seed_cands:
+        tracks.append(_Track(next_id, c, n_strips))
+        next_id += 1
+
+    for s in strip_order:
+        strip_cands = by_strip.get(s, [])
+        alive = [t for t in tracks if t.alive]
+        next_id = _process_strip(
+            alive, strip_cands, spacing_px, skip_penalty, birth_penalty,
+            max_skip_strips, config, tracks, next_id, n_strips,
+            allow_births=False,  # Don't birth in directional passes — seed has all rows
+        )
+
+    return tracks
+
+
+def track_rows(
+    candidates: list[RowCandidate],
+    strip_centers: list[float],
+    coarse: CoarseOrientation,
+    config: PipelineConfig,
+) -> list[RowTrajectory]:
+    """Link candidates across strips into coherent row trajectories.
+
+    Seeds from the densest strip, tracks forward and backward separately,
+    then merges the two passes.
+    """
+    n_strips = len(strip_centers)
+    if n_strips == 0 or not candidates:
+        return []
+
+    spacing_px = coarse.spacing_px
+    skip_penalty = config.skip_penalty_factor * spacing_px
+    birth_penalty = config.birth_penalty_factor * spacing_px
+    max_skip_strips = 3
+
+    # Group candidates by strip
+    by_strip: dict[int, list[RowCandidate]] = defaultdict(list)
+    for c in candidates:
+        by_strip[c.strip_index].append(c)
+    for s in by_strip:
+        by_strip[s].sort(key=lambda c: c.perp_position)
+
+    # Seed from the densest strip
+    seed_strip = max(by_strip.keys(), key=lambda s: len(by_strip[s]))
+    seed_cands = by_strip[seed_strip]
+
+    logger.info(
+        "Tracking: %d seed candidates from strip %d (densest), spacing_px=%.1f",
+        len(seed_cands), seed_strip, spacing_px,
+    )
+
+    # Track forward and backward independently
+    forward_strips = list(range(seed_strip + 1, n_strips))
+    backward_strips = list(range(seed_strip - 1, -1, -1))
+
+    fwd_tracks = _track_direction(
+        seed_cands, forward_strips, by_strip, n_strips,
+        spacing_px, skip_penalty, birth_penalty, max_skip_strips, config,
+    )
+    bwd_tracks = _track_direction(
+        seed_cands, backward_strips, by_strip, n_strips,
+        spacing_px, skip_penalty, birth_penalty, max_skip_strips, config,
+    )
+
+    # Merge forward and backward: each seed candidate gets ONE merged track
+    merged_tracks: list[_Track] = []
+    for i, seed_c in enumerate(seed_cands):
+        ft = fwd_tracks[i] if i < len(fwd_tracks) else None
+        bt = bwd_tracks[i] if i < len(bwd_tracks) else None
+
+        merged = _Track(i, seed_c, n_strips)
+        merged.candidates = [None] * n_strips
+        merged.candidates[seed_strip] = seed_c
+
+        # Copy forward results
+        if ft is not None:
+            for s in forward_strips:
+                if ft.candidates[s] is not None:
+                    merged.candidates[s] = ft.candidates[s]
+
+        # Copy backward results
+        if bt is not None:
+            for s in backward_strips:
+                if bt.candidates[s] is not None:
+                    merged.candidates[s] = bt.candidates[s]
+
+        merged_tracks.append(merged)
+
+    # Filter by minimum track length
+    trajectories = []
+    for track in merged_tracks:
+        traj = track.to_trajectory()
+        if traj.n_matched >= config.min_track_length:
+            trajectories.append(traj)
+
+    # Sort by mean perpendicular position
+    trajectories.sort(key=lambda t: t.mean_perp)
+    for i, t in enumerate(trajectories):
+        t.track_id = i
+
+    logger.info(
+        "Tracking complete: %d tracks from %d seeds (min_length=%d)",
+        len(trajectories), len(seed_cands), config.min_track_length,
+    )
+
+    return trajectories
