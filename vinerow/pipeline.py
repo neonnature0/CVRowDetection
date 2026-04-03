@@ -262,12 +262,15 @@ def run_pipeline(
         timings.total,
     )
 
-    # Populate per-trajectory diagnostics
+    # Populate per-trajectory diagnostics (always — counters are cheap)
     diag = diag_current()
-    if diag and config.save_debug_artifacts:
-        from vinerow.debug.row_diagnostics import TrajectoryDiagnostic
+    if diag:
+        from vinerow.debug.row_diagnostics import StripEvent, TrajectoryDiagnostic
         diag.n_tracks_after_fitting = len(fitted_rows)
         diag.n_rows_after_filtering = result.row_count
+
+        # Retrieve per-strip events stashed by tracker
+        strip_events: dict[int, list[StripEvent]] = getattr(diag, "_strip_events", {}) or {}
 
         valid_ids = {r.row_index for r in result.rows}
         for traj in trajectories:
@@ -280,8 +283,24 @@ def run_pipeline(
                 death_strip=traj.death_strip,
                 is_stitched=traj.source_trajectory_ids is not None,
                 stitch_source_ids=traj.source_trajectory_ids or [],
-                is_recovered=False,  # filled by tracker if applicable
+                is_recovered=False,
             )
+
+            # Attach per-strip events for this trajectory
+            events = strip_events.get(traj.track_id, [])
+            if events:
+                td.strip_events = events
+                # Derive birth/death info from events
+                births = [e for e in events if e.event == "birth"]
+                if births:
+                    td.birth_strength = births[0].strength or 0.0
+                    td.birth_perp = births[0].perp_actual or 0.0
+                    td.birth_source = births[0].reason or "seed"
+                deaths = [e for e in events if e.event == "death"]
+                if deaths:
+                    td.death_strip = deaths[-1].strip_index
+                    td.death_reason = deaths[-1].reason or "skip_limit"
+
             # Find corresponding fitted row
             fitted = next((r for r in fitted_rows if r.row_index == traj.track_id), None)
             if fitted:
@@ -300,6 +319,13 @@ def run_pipeline(
 
             diag.trajectories.append(td)
 
-        finish_block()
+        # Save diagnostics JSON only when debug artifacts are enabled
+        if config.save_debug_artifacts:
+            finish_block()
+        else:
+            # Reset without saving
+            from vinerow.debug.row_diagnostics import _current
+            import vinerow.debug.row_diagnostics as _diag_mod
+            _diag_mod._current = None
 
     return result
