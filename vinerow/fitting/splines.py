@@ -21,6 +21,72 @@ from vinerow.types import CoarseOrientation, FittedRow, RowSegment, RowTrajector
 logger = logging.getLogger(__name__)
 
 
+def _trim_endpoints(
+    centerline_px: list[tuple[float, float]],
+    lk_profile: list[float],
+    mpp: float,
+    block_median_lk: float,
+    config: PipelineConfig,
+) -> tuple[list[tuple[float, float]], list[float], float]:
+    """Trim centerline endpoints where likelihood evidence is weak.
+
+    Walks inward from each end. Trims points where likelihood < threshold
+    for a sustained run. Uses a relative threshold based on the block's
+    median likelihood (protects faint blocks).
+    """
+    if len(centerline_px) < 4 or lk_profile is None:
+        length = sum(
+            math.hypot(centerline_px[i][0] - centerline_px[i-1][0],
+                       centerline_px[i][1] - centerline_px[i-1][1])
+            for i in range(1, len(centerline_px))
+        ) * mpp
+        return centerline_px, lk_profile, length
+
+    threshold = block_median_lk * config.endpoint_trim_likelihood_ratio
+    min_run = config.endpoint_trim_min_run
+
+    # Trim from the start
+    start = 0
+    run = 0
+    for i, lk in enumerate(lk_profile):
+        if lk < threshold:
+            run += 1
+        else:
+            if run >= min_run:
+                start = i
+            break
+    else:
+        start = 0
+
+    # Trim from the end
+    end = len(lk_profile)
+    run = 0
+    for i in range(len(lk_profile) - 1, -1, -1):
+        if lk_profile[i] < threshold:
+            run += 1
+        else:
+            if run >= min_run:
+                end = i + 1
+            break
+
+    # Safety: keep at least 50% of original
+    min_keep = max(4, len(centerline_px) // 2)
+    if end - start < min_keep:
+        start = 0
+        end = len(centerline_px)
+
+    trimmed_cl = centerline_px[start:end]
+    trimmed_lk = lk_profile[start:end]
+
+    length = sum(
+        math.hypot(trimmed_cl[i][0] - trimmed_cl[i-1][0],
+                   trimmed_cl[i][1] - trimmed_cl[i-1][1])
+        for i in range(1, len(trimmed_cl))
+    ) * mpp
+
+    return trimmed_cl, trimmed_lk, length
+
+
 def _fit_single_row(
     trajectory: RowTrajectory,
     coarse: CoarseOrientation,
@@ -28,6 +94,7 @@ def _fit_single_row(
     mask: np.ndarray,
     config: PipelineConfig,
     likelihood_map: np.ndarray | None = None,
+    block_median_lk: float = 0.0,
 ) -> FittedRow | None:
     """Fit a smooth centerline to a single row trajectory."""
     matched = [(c.strip_index, c) for c in trajectory.candidates if c is not None]
@@ -228,6 +295,12 @@ def _fit_single_row(
             else:
                 lk_profile.append(0.0)
 
+    # Trim endpoints where likelihood evidence is weak
+    if lk_profile is not None and block_median_lk > 0:
+        centerline_px, lk_profile, length_m = _trim_endpoints(
+            centerline_px, lk_profile, mpp, block_median_lk, config,
+        )
+
     return FittedRow(
         row_index=trajectory.track_id,
         centerline_px=centerline_px,
@@ -265,10 +338,17 @@ def fit_centerlines(
     Returns:
         List of FittedRow, sorted by perpendicular position (row order).
     """
+    # Compute block-level median likelihood for relative endpoint trimming
+    block_median_lk = 0.0
+    if likelihood_map is not None:
+        mask_pixels = mask > 0
+        if mask_pixels.any():
+            block_median_lk = float(np.median(likelihood_map[mask_pixels]))
+
     fitted: list[FittedRow] = []
 
     for traj in trajectories:
-        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map)
+        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map, block_median_lk)
         if row is None:
             continue
         fitted.append(row)
