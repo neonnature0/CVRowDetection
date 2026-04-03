@@ -480,15 +480,28 @@ def track_rows(
                 )
                 continue
 
-            # Reject if this perp position is already well-covered by an existing track
+            # Reject if this perp position is already covered by an existing track
+            # in the SAME strip range (not just same perp — a continuation segment
+            # at strips 0-19 should NOT be rejected by a track at strips 37-65)
             group_perp = sum(c.perp_position for c in group) / len(group)
             if not np.isfinite(group_perp):
                 logger.warning("Recovery: skipping group with non-finite perp (n=%d)", len(group))
                 continue
-            already_covered = any(
-                abs(group_perp - ep) < spacing_px * 0.4
-                for ep in existing_perps
-            )
+            already_covered = False
+            for traj in trajectories:
+                if abs(group_perp - traj.mean_perp) >= spacing_px * 0.4:
+                    continue  # different row position — no conflict
+                # Same perp — check if strips actually overlap
+                traj_matched = [c.strip_index for c in traj.candidates if c is not None]
+                if not traj_matched:
+                    continue
+                traj_first_strip = min(traj_matched)
+                traj_last_strip = max(traj_matched)
+                overlap_start = max(first_strip, traj_first_strip)
+                overlap_end = min(last_strip, traj_last_strip)
+                if overlap_end >= overlap_start:
+                    already_covered = True
+                    break
             if already_covered:
                 continue
 
@@ -512,6 +525,18 @@ def track_rows(
             next_id += 1
             if diag:
                 diag.n_recovered_trajectories += 1
+
+            # Log proximity to other recovered segments (duplicate detection)
+            same_perp_recovered = sum(
+                1 for ep in existing_perps[-(n_recovered):-1]
+                if abs(group_perp - ep) < spacing_px * 0.4
+            )
+            if same_perp_recovered > 0:
+                logger.debug(
+                    "  Recovery: near-duplicate (perp=%.0f, %d similar recovered already)",
+                    group_perp, same_perp_recovered,
+                )
+
             logger.info(
                 "  Recovered trajectory: perp=%.0f, matched=%d, strips %d-%d",
                 traj.mean_perp, n_matched, first_strip, last_strip,
