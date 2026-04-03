@@ -27,6 +27,7 @@ def _fit_single_row(
     mpp: float,
     mask: np.ndarray,
     config: PipelineConfig,
+    likelihood_map: np.ndarray | None = None,
 ) -> FittedRow | None:
     """Fit a smooth centerline to a single row trajectory."""
     matched = [(c.strip_index, c) for c in trajectory.candidates if c is not None]
@@ -190,6 +191,11 @@ def _fit_single_row(
     completeness = trajectory.n_matched / max(total_strips * 0.5, 1)
     confidence *= min(completeness, 1.0)
 
+    # Penalize confidence for high curvature (soft limit, not hard rejection)
+    if curvature_max > 0 and config.curvature_soft_limit > 0:
+        curvature_penalty = max(0.3, 1.0 - curvature_max / config.curvature_soft_limit)
+        confidence *= curvature_penalty
+
     # Build segment metadata from trajectory (if available from stitching)
     segments = None
     if trajectory.segments:
@@ -210,6 +216,18 @@ def _fit_single_row(
                     ))
         segments = all_segs
 
+    # Sample likelihood along centerline for evidence profile
+    lk_profile = None
+    if likelihood_map is not None and len(centerline_px) >= 2:
+        lh, lw = likelihood_map.shape[:2]
+        lk_profile = []
+        for px, py in centerline_px:
+            ix, iy = int(round(px)), int(round(py))
+            if 0 <= ix < lw and 0 <= iy < lh:
+                lk_profile.append(round(float(likelihood_map[iy, ix]), 3))
+            else:
+                lk_profile.append(0.0)
+
     return FittedRow(
         row_index=trajectory.track_id,
         centerline_px=centerline_px,
@@ -217,6 +235,7 @@ def _fit_single_row(
         length_m=round(length_m, 2),
         curvature_max_deg_per_m=round(curvature_max, 4),
         segments=segments,
+        likelihood_profile=lk_profile,
     )
 
 
@@ -229,6 +248,7 @@ def fit_centerlines(
     zoom: int,
     tile_size: int,
     config: PipelineConfig,
+    likelihood_map: np.ndarray | None = None,
 ) -> list[FittedRow]:
     """Fit smooth centerlines to all row trajectories.
 
@@ -248,7 +268,7 @@ def fit_centerlines(
     fitted: list[FittedRow] = []
 
     for traj in trajectories:
-        row = _fit_single_row(traj, coarse, mpp, mask, config)
+        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map)
         if row is None:
             continue
         fitted.append(row)

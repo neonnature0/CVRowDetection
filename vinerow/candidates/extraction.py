@@ -77,6 +77,7 @@ def _profile_to_candidates(
     strip_along_center: float,
     config: PipelineConfig,
     prominence_override: float | None = None,
+    likelihood_map: np.ndarray | None = None,
 ) -> list[RowCandidate]:
     """Find peak candidates in a 1D perpendicular profile."""
     if len(profile) < 5:
@@ -124,6 +125,14 @@ def _profile_to_candidates(
         if "prominences" in properties and i < len(properties["prominences"]):
             hw = float(properties["prominences"][i]) / max_strength
 
+        # Sample raw likelihood at candidate position
+        lk = 0.0
+        if likelihood_map is not None:
+            ix, iy = int(round(x)), int(round(y))
+            lh, lw = likelihood_map.shape[:2]
+            if 0 <= ix < lw and 0 <= iy < lh:
+                lk = float(likelihood_map[iy, ix])
+
         candidates.append(RowCandidate(
             x=round(x, 1),
             y=round(y, 1),
@@ -131,6 +140,7 @@ def _profile_to_candidates(
             perp_position=round(perp_pos, 2),
             strength=round(strength, 4),
             half_width_px=round(hw, 2),
+            likelihood=round(lk, 4),
         ))
 
     return candidates
@@ -381,6 +391,7 @@ def extract_candidates(
         strip_candidates = _profile_to_candidates(
             positions, profile, s, spacing_px, cx, cy, angle_rad, strip_center,
             config, prominence_override=prom_override,
+            likelihood_map=likelihood_map,
         )
 
         all_candidates.extend(strip_candidates)

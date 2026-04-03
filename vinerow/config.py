@@ -50,6 +50,7 @@ class PipelineConfig:
     min_track_length: int = 3           # discard tracks with fewer matched candidates
     max_consecutive_skips: int = 8      # max strips a track can coast without a match
     validation_threshold_factor: float = 0.75  # match rejection = factor * spacing_px
+    min_candidate_likelihood_ratio: float = 0.3  # candidate likelihood / strip mean; below = skip
     skip_escalation_rate: float = 0.25  # skip cost multiplier per consecutive skip
     gap_bridge_enabled: bool = False    # post-tracking gap bridge pass (legacy, unused)
     gap_bridge_lookahead: int = 8       # max strips to search beyond track death (legacy)
@@ -63,6 +64,7 @@ class PipelineConfig:
     stitch_ambiguity_ratio: float = 1.5     # best match must be this much better than 2nd best
 
     # --- Fitting (Stage 6) ---
+    curvature_soft_limit: float = 10.0  # deg/m — curvature above this penalizes confidence
     spline_smoothing_m: float = 0.2     # allowed deviation from smooth curve (meters)
     centerline_sample_interval_px: float = 10.0  # sample spline every N pixels
     spline_extrapolate_factor: float = 0.0       # endpoint extrapolation = factor * spacing_px (0=off)

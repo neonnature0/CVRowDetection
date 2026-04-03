@@ -102,6 +102,7 @@ def _process_strip(
     allow_births: bool = True,
     strip_index: int = -1,
     strip_events: dict[int, list[StripEvent]] | None = None,
+    strip_mean_likelihood: float = 0.0,
 ) -> int:
     """Process one strip: match candidates to tracks via Hungarian assignment.
 
@@ -180,12 +181,31 @@ def _process_strip(
     matched_tracks: set[int] = set()
     matched_cands: set[int] = set()
 
+    # Likelihood-corridor validation threshold
+    lk_ratio_min = config.min_candidate_likelihood_ratio
+
     for ri, ci in zip(row_ind, col_ind):
         if ri < n_tracks and ci < n_cands:
             track = alive_tracks[ri]
             cand = strip_cands[ci]
             pos_error = abs(track.predicted_perp - cand.perp_position)
             if pos_error < config.validation_threshold_factor * spacing_px:
+                # Likelihood-corridor check: reject if candidate likelihood
+                # is too weak relative to the strip mean
+                lk_ratio = cand.likelihood / strip_mean_likelihood if strip_mean_likelihood > 1e-6 else 1.0
+                if lk_ratio < lk_ratio_min:
+                    track.skip()
+                    _emit(strip_events, track.track_id, strip_index, "skip",
+                           reason="low_likelihood",
+                           perp_predicted=track.predicted_perp,
+                           perp_actual=cand.perp_position,
+                           strength=round(lk_ratio, 3))
+                    if track.consecutive_skips >= max_skip_strips:
+                        track.alive = False
+                        _emit(strip_events, track.track_id, strip_index, "death",
+                               reason="skip_limit")
+                    continue
+
                 track.match(cand)
                 matched_tracks.add(ri)
                 matched_cands.add(ci)
@@ -241,6 +261,7 @@ def _track_direction(
     max_skip_strips: int,
     config: PipelineConfig,
     strip_events: dict[int, list[StripEvent]] | None = None,
+    strip_mean_likelihoods: dict[int, float] | None = None,
 ) -> list[_Track]:
     """Track one direction (forward or backward) from seed candidates."""
     tracks: list[_Track] = []
@@ -252,12 +273,14 @@ def _track_direction(
     for s in strip_order:
         strip_cands = by_strip.get(s, [])
         alive = [t for t in tracks if t.alive]
+        sml = strip_mean_likelihoods.get(s, 0.0) if strip_mean_likelihoods else 0.0
         next_id = _process_strip(
             alive, strip_cands, spacing_px, skip_penalty, birth_penalty,
             max_skip_strips, config, tracks, next_id, n_strips,
-            allow_births=False,  # Don't birth in directional passes — seed has all rows
+            allow_births=False,
             strip_index=s,
             strip_events=strip_events,
+            strip_mean_likelihood=sml,
         )
 
     return tracks
@@ -306,6 +329,12 @@ def track_rows(
         len(seed_cands), seed_strip, spacing_px,
     )
 
+    # Per-strip mean likelihood for corridor validation
+    strip_mean_likelihoods: dict[int, float] = {}
+    for s, cands in by_strip.items():
+        lks = [c.likelihood for c in cands if c.likelihood > 0]
+        strip_mean_likelihoods[s] = sum(lks) / len(lks) if lks else 0.0
+
     # Per-strip event collection (keyed by track_id)
     strip_events: dict[int, list[StripEvent]] = {} if diag else None
 
@@ -324,11 +353,13 @@ def track_rows(
         seed_cands, forward_strips, by_strip, n_strips,
         spacing_px, skip_penalty, birth_penalty, max_skip_strips, config,
         strip_events=strip_events,
+        strip_mean_likelihoods=strip_mean_likelihoods,
     )
     bwd_tracks = _track_direction(
         seed_cands, backward_strips, by_strip, n_strips,
         spacing_px, skip_penalty, birth_penalty, max_skip_strips, config,
         strip_events=strip_events,
+        strip_mean_likelihoods=strip_mean_likelihoods,
     )
 
     # Merge forward and backward: each seed candidate gets ONE merged track
