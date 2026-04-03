@@ -113,7 +113,17 @@ def _profile_to_candidates(
         max_strength = 1.0
 
     for i, idx in enumerate(peak_indices):
-        perp_pos = float(positions[idx])
+        # Sub-pixel refinement: weighted centroid in a small window around the peak
+        half_win = max(2, int(spacing_px * 0.15))
+        lo = max(0, idx - half_win)
+        hi = min(len(smooth), idx + half_win + 1)
+        window_vals = smooth[lo:hi]
+        window_pos = positions[lo:hi]
+        total_weight = float(np.sum(window_vals))
+        if total_weight > 1e-6:
+            perp_pos = float(np.sum(window_pos * window_vals) / total_weight)
+        else:
+            perp_pos = float(positions[idx])
         strength = float(smooth[idx]) / max_strength
 
         # Convert to image coordinates
