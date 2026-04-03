@@ -418,6 +418,15 @@ def track_rows(
         if diag:
             diag.n_orphaned_candidates = len(orphaned)
 
+        # Block-relative strength floor for recovery
+        all_strengths = [c.strength for c in candidates]
+        block_median_strength = float(np.median(all_strengths)) if all_strengths else 0.5
+        strength_floor = block_median_strength * config.recovery_strength_ratio
+        logger.debug(
+            "Recovery: block_median_strength=%.3f, strength_floor=%.3f",
+            block_median_strength, strength_floor,
+        )
+
         # Group orphaned candidates by perp proximity (cluster into rows)
         orphaned.sort(key=lambda c: c.perp_position)
         orphan_groups: list[list[RowCandidate]] = []
@@ -460,6 +469,15 @@ def track_rows(
 
             # Reject if density is too low (less than 50% of strips matched)
             if n_matched / strip_span < 0.5:
+                continue
+
+            # Reject if mean strength is below the block-relative floor
+            group_mean_strength = sum(c.strength for c in group) / len(group)
+            if group_mean_strength < strength_floor:
+                logger.debug(
+                    "Recovery: rejected weak group (mean_strength=%.3f < floor=%.3f, n=%d)",
+                    group_mean_strength, strength_floor, len(group),
+                )
                 continue
 
             # Reject if this perp position is already well-covered by an existing track
