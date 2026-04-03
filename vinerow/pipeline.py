@@ -120,13 +120,19 @@ def run_pipeline(
     t0 = time.perf_counter()
     if config.ridge_mode == "ml":
         from vinerow.ridge.ml_likelihood import compute_ml_likelihood
-        likelihood_map = compute_ml_likelihood(preprocessed, preprocessed.mask, config)
+        likelihood_map = compute_ml_likelihood(
+            preprocessed, preprocessed.mask, config,
+            coarse_angle_deg=coarse.angle_deg,
+        )
     elif config.ridge_mode == "ml_ensemble":
         from vinerow.ridge.likelihood import compute_row_likelihood
         from vinerow.ridge.ml_likelihood import compute_ml_likelihood
         gabor_cfg = PipelineConfig(**{**config.__dict__, "ridge_mode": "gabor"})
         gabor_map = compute_row_likelihood(preprocessed, coarse, mpp, gabor_cfg)
-        ml_map = compute_ml_likelihood(preprocessed, preprocessed.mask, config)
+        ml_map = compute_ml_likelihood(
+            preprocessed, preprocessed.mask, config,
+            coarse_angle_deg=coarse.angle_deg,
+        )
         likelihood_map = np.maximum(gabor_map, ml_map)
     else:
         from vinerow.ridge.likelihood import compute_row_likelihood
@@ -173,6 +179,22 @@ def run_pipeline(
         return None
 
     # ------------------------------------------------------------------
+    # Stage 5b: Post-Tracking Stitching
+    # ------------------------------------------------------------------
+    t0 = time.perf_counter()
+    from vinerow.tracking.stitching import stitch_trajectories
+    n_strips = len(strip_centers)
+    trajectories, occlusion_gaps = stitch_trajectories(
+        trajectories, n_strips, coarse.spacing_px, config,
+    )
+    stitch_time = time.perf_counter() - t0
+    timings.tracking += stitch_time  # fold into tracking time
+    logger.info(
+        "Stage 5b (stitching): %.2fs, %d tracks after stitch, %d occlusion gaps",
+        stitch_time, len(trajectories), len(occlusion_gaps),
+    )
+
+    # ------------------------------------------------------------------
     # Stage 6: Centerline Fitting
     # ------------------------------------------------------------------
     t0 = time.perf_counter()
@@ -203,6 +225,7 @@ def run_pipeline(
         image_size=(w_img, h),
         timings=timings,
         config=config,
+        occlusion_gaps=occlusion_gaps,
     )
     timings.postprocessing = time.perf_counter() - t0
     logger.info(

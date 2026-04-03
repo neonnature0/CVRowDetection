@@ -265,7 +265,7 @@ def main():
     parser.add_argument(
         "--ridge-mode",
         choices=["hessian", "luminance", "exg_only", "gabor", "ensemble",
-                 "hessian_small", "hessian_large"],
+                 "hessian_small", "hessian_large", "ml", "ml_ensemble"],
         default=None,
         help="Ridge detection strategy (default: hessian)",
     )

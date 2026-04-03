@@ -1,0 +1,50 @@
+Contents
+Acknowledgements v
+Preface vii
+Abstract ix
+Résumé xi
+Contents xiii
+1 Introduction 1
+1.1 Work Relevance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2
+1.2 Problem Statement . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+1.3 Main Contributions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+1.4 Thesis Outline . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+2 Fundamentals 7
+2.1 Fundamentals for Image Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . 8
+2.2 Fundamentals for Machine Learning . . . . . . . . . . . . . . . . . . . . . . . . 11
+3 State-of-the-Art 23
+3.1 Qualitative Scale . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+3.2 Linear Object Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24
+3.3 Image Analysis for Precision Agriculture . . . . . . . . . . . . . . . . . . . . . . 25
+3.4 Vine Lines Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26
+3.5 Summary . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28
+4 Dataset 29
+4.1 Data Collection . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30
+4.2 Data Labeling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35
+4.3 Data Splitting . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37
+4.4 Data Augmentation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37
+xiii
+5 Methods 39
+5.1 Workflow . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 40
+5.2 Metrics for Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42
+6 Experiments 47
+6.1 Tools and Frameworks . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+6.2 Initial Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 48
+6.3 Coarse Approach . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 62
+6.4 Fine Approach . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 72
+6.5 Improved Vine Line Detection . . . . . . . . . . . . . . . . . . . . . . . . . . . 84
+7 Limitations and Generalization 89
+8 Conclusions 99
+9 Publications and Patent 103
+9.1 Publications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 104
+9.2 Patent . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 105
+A Appendix 107
+A.1 Drone . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 108
+A.2 Sources . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 110
+Acronyms 111
+Glossary 113
+Bibliography 137
+List of Figures 145
+List of Tables 148
+Curriculum Vitae 149
+xiv

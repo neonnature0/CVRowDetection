@@ -30,6 +30,24 @@ def get_train_transform() -> A.Compose:
     ])
 
 
+def get_aligned_train_transform() -> A.Compose:
+    """Transform for pre-aligned patches: rows are vertical, reduced rotation."""
+    return A.Compose([
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        # No RandomRotate90 — rows are pre-aligned vertical
+        A.ShiftScaleRotate(
+            shift_limit=0.1, scale_limit=0.15, rotate_limit=5,
+            border_mode=cv2.BORDER_REFLECT, p=0.5,
+        ),
+        A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+        A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=20, val_shift_limit=20, p=0.3),
+        A.GaussNoise(p=0.3),
+        A.GaussianBlur(blur_limit=(3, 5), p=0.2),
+        ToTensorV2(),
+    ])
+
+
 def get_val_transform() -> A.Compose:
     return A.Compose([ToTensorV2()])
 

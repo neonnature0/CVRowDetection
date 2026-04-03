@@ -106,11 +106,33 @@ def extract_patches(
     return patches
 
 
+def rotate_to_vertical(image: np.ndarray, mask: np.ndarray, heatmap: np.ndarray, angle_deg: float):
+    """Rotate image/mask/heatmap so vine rows are vertical (90°)."""
+    rotation_angle = 90.0 - angle_deg
+    h, w = image.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    M = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
+    cos = abs(M[0, 0])
+    sin = abs(M[0, 1])
+    new_w = int(h * sin + w * cos)
+    new_h = int(h * cos + w * sin)
+    M[0, 2] += (new_w - w) / 2.0
+    M[1, 2] += (new_h - h) / 2.0
+
+    rot_img = cv2.warpAffine(image, M, (new_w, new_h), borderMode=cv2.BORDER_REFLECT)
+    rot_mask = cv2.warpAffine(mask, M, (new_w, new_h), borderValue=0)
+    rot_heatmap = cv2.warpAffine(heatmap, M, (new_w, new_h), borderValue=0.0)
+    return rot_img, rot_mask, rot_heatmap
+
+
 def process_annotation(
     annotation_path: Path,
     patch_size: int,
     overlap: float,
     min_coverage: float,
+    align_rows: bool = False,
+    patches_dir: Path = PATCHES_DIR,
+    targets_dir: Path = TARGETS_DIR,
 ) -> int:
     """Process one annotation file into training patches. Returns patch count."""
     with open(annotation_path, "r", encoding="utf-8") as f:
@@ -166,6 +188,10 @@ def process_annotation(
     # Generate heatmap from curved polylines
     heatmap = generate_heatmap((h, w), mask, centerlines, spacing_px)
 
+    # Rotate to align rows vertically before patch extraction
+    if align_rows:
+        image, mask, heatmap = rotate_to_vertical(image, mask, heatmap, angle_deg)
+
     # Extract patches
     patches = extract_patches(image, heatmap, mask, patch_size, overlap, min_coverage)
 
@@ -173,8 +199,8 @@ def process_annotation(
     stem = annotation_path.stem
     for idx, (img_patch, hm_patch, r, c) in enumerate(patches):
         patch_name = f"{stem}_{r:05d}_{c:05d}"
-        cv2.imwrite(str(PATCHES_DIR / f"{patch_name}.png"), img_patch)
-        np.save(str(TARGETS_DIR / f"{patch_name}.npy"), hm_patch)
+        cv2.imwrite(str(patches_dir / f"{patch_name}.png"), img_patch)
+        np.save(str(targets_dir / f"{patch_name}.npy"), hm_patch)
 
     return len(patches)
 
@@ -216,7 +242,21 @@ def main():
     parser.add_argument("--status", type=str, default="complete",
                         choices=["pending", "modified", "complete", "any"],
                         help="Only use annotations with this status (default: complete)")
+    parser.add_argument("--align-rows", action="store_true",
+                        help="Rotate blocks so rows are vertical before patch extraction")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory (default: dataset/training or dataset/training_aligned)")
     args = parser.parse_args()
+
+    # Resolve output directories
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    elif args.align_rows:
+        output_dir = DATASET_DIR / "training_aligned"
+    else:
+        output_dir = TRAINING_DIR
+    patches_dir = output_dir / "patches"
+    targets_dir = output_dir / "targets"
 
     # Find annotations
     ann_files = sorted(
@@ -239,12 +279,13 @@ def main():
         sys.exit(1)
 
     # Create output directories
-    PATCHES_DIR.mkdir(parents=True, exist_ok=True)
-    TARGETS_DIR.mkdir(parents=True, exist_ok=True)
+    patches_dir.mkdir(parents=True, exist_ok=True)
+    targets_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nGenerating training data from {len(ann_files)} annotations...")
+    align_label = " (align-rows)" if args.align_rows else ""
+    print(f"\nGenerating training data from {len(ann_files)} annotations{align_label}...")
     print(f"  Patch size: {args.patch_size}px, Overlap: {args.overlap}, Min coverage: {args.min_coverage}")
-    print(f"  Output: {TRAINING_DIR.resolve()}\n")
+    print(f"  Output: {output_dir.resolve()}\n")
 
     total_patches = 0
     vineyards = {}
@@ -257,24 +298,27 @@ def main():
         vineyards[f.stem] = vineyard
 
         print(f"  [{i+1}/{len(ann_files)}] {name} ({vineyard})...", end="", flush=True)
-        n = process_annotation(f, args.patch_size, args.overlap, args.min_coverage)
+        n = process_annotation(
+            f, args.patch_size, args.overlap, args.min_coverage,
+            align_rows=args.align_rows, patches_dir=patches_dir, targets_dir=targets_dir,
+        )
         total_patches += n
         print(f" {n} patches")
 
     # Generate splits
     if vineyards:
         splits = generate_splits(vineyards)
-        splits_path = TRAINING_DIR / "splits.json"
+        splits_path = output_dir / "splits.json"
         with open(splits_path, "w", encoding="utf-8") as f:
             json.dump(splits, f, indent=2)
         print(f"\nSplits: train={len(splits['train'])}, val={len(splits['val'])}, test={len(splits['test'])}")
 
     # Dataset statistics
     print(f"\nTotal patches: {total_patches}")
-    print(f"Output: {TRAINING_DIR.resolve()}")
+    print(f"Output: {output_dir.resolve()}")
 
     # Compute channel statistics if patches exist
-    patch_files = list(PATCHES_DIR.glob("*.png"))
+    patch_files = list(patches_dir.glob("*.png"))
     if patch_files and len(patch_files) <= 500:
         print("Computing channel statistics...")
         means, stds = [], []
@@ -291,10 +335,11 @@ def main():
             "total_patches": total_patches,
             "patch_size": args.patch_size,
             "overlap": args.overlap,
+            "aligned": args.align_rows,
             "channel_means_bgr": mean_bgr.tolist(),
             "channel_stds_bgr": std_bgr.tolist(),
         }
-        stats_path = TRAINING_DIR / "stats.json"
+        stats_path = output_dir / "stats.json"
         with open(stats_path, "w", encoding="utf-8") as f:
             json.dump(stats, f, indent=2)
 
