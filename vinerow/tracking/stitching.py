@@ -408,7 +408,13 @@ def _group_stitch(
 
     for i, li in enumerate(left_stubs):
         for j, rj in enumerate(right_stubs):
-            cost[i, j] = _stitch_score(trajectories[li], trajectories[rj], spacing_px, config)
+            score = _stitch_score(trajectories[li], trajectories[rj], spacing_px, config)
+            # Replace inf with large finite value — scipy rejects all-inf rows
+            cost[i, j] = min(score, 1e8) if score != float("inf") else 1e8
+
+    if not np.isfinite(cost).all():
+        logger.warning("Group stitch cost matrix has non-finite values, clamping")
+        cost = np.clip(cost, 0, 1e8)
 
     # Solve with Hungarian (appropriate here — it's a small N×M problem
     # and we enforce order via the ambiguity check below)

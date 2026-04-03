@@ -50,6 +50,8 @@ def run_pipeline(
     tile_origin: tuple[int, int] = (0, 0),
     tile_source: str = "unknown",
     config: PipelineConfig | None = None,
+    block_name: str = "",
+    vineyard_name: str = "",
 ) -> BlockRowDetectionResult | None:
     """Execute the full row detection pipeline.
 
@@ -81,6 +83,10 @@ def run_pipeline(
         "Pipeline start: image=%dx%d, mpp=%.3f, source=%s, zoom=%d",
         w_img, h, mpp, tile_source, zoom,
     )
+
+    # Start diagnostics collection
+    from vinerow.debug.row_diagnostics import start_block, current as diag_current, finish_block
+    diag = start_block(block_name=block_name, vineyard_name=vineyard_name)
 
     # ------------------------------------------------------------------
     # Stage 1: Preprocessing
@@ -174,6 +180,13 @@ def run_pipeline(
         timings.tracking, len(trajectories),
     )
 
+    # Record tracking diagnostics
+    diag = diag_current()
+    if diag:
+        diag.n_candidates = len(candidates)
+        diag.n_strips = len(strip_centers)
+        diag.n_tracks_after_tracking = len(trajectories)
+
     if len(trajectories) < 1:
         logger.error("Pipeline failed: no row tracks formed")
         return None
@@ -193,6 +206,12 @@ def run_pipeline(
         "Stage 5b (stitching): %.2fs, %d tracks after stitch, %d occlusion gaps",
         stitch_time, len(trajectories), len(occlusion_gaps),
     )
+
+    # Record stitching diagnostics
+    diag = diag_current()
+    if diag:
+        diag.n_tracks_after_stitching = len(trajectories)
+        diag.n_occlusion_gaps = len(occlusion_gaps)
 
     # ------------------------------------------------------------------
     # Stage 6: Centerline Fitting
@@ -242,5 +261,45 @@ def run_pipeline(
         result.overall_confidence,
         timings.total,
     )
+
+    # Populate per-trajectory diagnostics
+    diag = diag_current()
+    if diag and config.save_debug_artifacts:
+        from vinerow.debug.row_diagnostics import TrajectoryDiagnostic
+        diag.n_tracks_after_fitting = len(fitted_rows)
+        diag.n_rows_after_filtering = result.row_count
+
+        valid_ids = {r.row_index for r in result.rows}
+        for traj in trajectories:
+            td = TrajectoryDiagnostic(
+                track_id=traj.track_id,
+                mean_perp=round(traj.mean_perp, 1),
+                n_matched=traj.n_matched,
+                n_strips=len(traj.candidates),
+                birth_strip=traj.birth_strip,
+                death_strip=traj.death_strip,
+                is_stitched=traj.source_trajectory_ids is not None,
+                stitch_source_ids=traj.source_trajectory_ids or [],
+                is_recovered=False,  # filled by tracker if applicable
+            )
+            # Find corresponding fitted row
+            fitted = next((r for r in fitted_rows if r.row_index == traj.track_id), None)
+            if fitted:
+                td.spline_max_curvature = fitted.curvature_max_deg_per_m
+                td.confidence_final = fitted.confidence
+                td.length_m = fitted.length_m
+                td.passed_filters = fitted.row_index in valid_ids
+                if not td.passed_filters:
+                    if fitted.confidence < config.min_row_confidence:
+                        td.filter_reason = "low_confidence"
+                    else:
+                        td.filter_reason = "too_short"
+            else:
+                td.passed_filters = False
+                td.filter_reason = "fitting_failed"
+
+            diag.trajectories.append(td)
+
+        finish_block()
 
     return result
