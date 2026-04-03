@@ -18,6 +18,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from vinerow.config import PipelineConfig
+from vinerow.debug.row_diagnostics import StripEvent
 from vinerow.types import CoarseOrientation, RowCandidate, RowTrajectory
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,14 @@ class _Track:
     @property
     def predicted_perp(self) -> float:
         """Linear extrapolation from last two matched positions."""
-        return self.last_perp + (self.last_perp - self.prev_perp)
+        pred = self.last_perp + (self.last_perp - self.prev_perp)
+        if not np.isfinite(pred):
+            logger.warning(
+                "Track %d: non-finite predicted_perp=%.1f (last=%.1f, prev=%.1f, birth=%.1f) — falling back to last_perp",
+                self.track_id, pred, self.last_perp, self.prev_perp, self.birth_perp,
+            )
+            return self.last_perp
+        return pred
 
     def match(self, candidate: RowCandidate) -> None:
         self.candidates[candidate.strip_index] = candidate
@@ -66,6 +74,20 @@ class _Track:
         )
 
 
+def _emit(
+    events: dict[int, list[StripEvent]] | None,
+    track_id: int,
+    strip_index: int,
+    event: str,
+    **kwargs,
+) -> None:
+    """Append a StripEvent if diagnostics are enabled."""
+    if events is not None:
+        events.setdefault(track_id, []).append(
+            StripEvent(strip_index=strip_index, event=event, **kwargs)
+        )
+
+
 def _process_strip(
     alive_tracks: list[_Track],
     strip_cands: list[RowCandidate],
@@ -78,6 +100,8 @@ def _process_strip(
     next_track_id: int,
     n_strips: int,
     allow_births: bool = True,
+    strip_index: int = -1,
+    strip_events: dict[int, list[StripEvent]] | None = None,
 ) -> int:
     """Process one strip: match candidates to tracks via Hungarian assignment.
 
@@ -89,6 +113,8 @@ def _process_strip(
     if not alive_tracks:
         if allow_births:
             for c in strip_cands:
+                _emit(strip_events, next_track_id, strip_index, "birth",
+                       perp_actual=c.perp_position, strength=c.strength)
                 all_tracks.append(_Track(next_track_id, c, n_strips))
                 next_track_id += 1
         return next_track_id
@@ -98,6 +124,11 @@ def _process_strip(
             t.skip()
             if t.consecutive_skips >= max_skip_strips:
                 t.alive = False
+                _emit(strip_events, t.track_id, strip_index, "death",
+                       reason="skip_limit", perp_predicted=t.predicted_perp)
+            else:
+                _emit(strip_events, t.track_id, strip_index, "skip",
+                       reason="empty_strip", perp_predicted=t.predicted_perp)
         return next_track_id
 
     n_tracks = len(alive_tracks)
@@ -109,8 +140,15 @@ def _process_strip(
 
     # Real assignment costs
     for i, track in enumerate(alive_tracks):
+        pred_perp = track.predicted_perp
+        if not np.isfinite(pred_perp):
+            logger.warning(
+                "Track %d: non-finite predicted_perp in cost matrix (birth=%.1f, last=%.1f, prev=%.1f)",
+                track.track_id, track.birth_perp, track.last_perp, track.prev_perp,
+            )
         for j, cand in enumerate(strip_cands):
-            pos_cost = abs(track.predicted_perp - cand.perp_position)
+            pos_cost = abs(pred_perp - cand.perp_position)
+            pos_cost = min(pos_cost, 1e6)  # safety clamp
             strength_cost = config.strength_weight_factor * spacing_px * (1.0 - cand.strength)
             cost[i, j] = config.position_weight * pos_cost + strength_cost
 
@@ -127,6 +165,16 @@ def _process_strip(
         for j in range(n_tracks):
             cost[n_tracks + i, n_cands + j] = 0.0
 
+    # Verify no inf/nan leaked into the cost matrix
+    if not np.isfinite(cost).all():
+        bad = np.argwhere(~np.isfinite(cost))
+        for bi, bj in bad[:5]:  # log first 5 offenders
+            logger.warning(
+                "Non-finite cost[%d,%d]=%.1f (n_tracks=%d, n_cands=%d)",
+                bi, bj, cost[bi, bj], n_tracks, n_cands,
+            )
+        cost = np.clip(cost, 0, 1e9)
+
     row_ind, col_ind = linear_sum_assignment(cost)
 
     matched_tracks: set[int] = set()
@@ -141,22 +189,42 @@ def _process_strip(
                 track.match(cand)
                 matched_tracks.add(ri)
                 matched_cands.add(ci)
+                _emit(strip_events, track.track_id, strip_index, "match",
+                       perp_predicted=track.predicted_perp,
+                       perp_actual=cand.perp_position,
+                       position_error=round(pos_error, 2),
+                       strength=round(cand.strength, 3))
             else:
                 track.skip()
+                _emit(strip_events, track.track_id, strip_index, "skip",
+                       reason="validation_rejected",
+                       perp_predicted=track.predicted_perp,
+                       perp_actual=cand.perp_position,
+                       position_error=round(pos_error, 2))
                 if track.consecutive_skips >= max_skip_strips:
                     track.alive = False
+                    _emit(strip_events, track.track_id, strip_index, "death",
+                           reason="skip_limit")
         elif ri < n_tracks and ci >= n_cands:
             track = alive_tracks[ri]
             if ri not in matched_tracks:
                 track.skip()
+                _emit(strip_events, track.track_id, strip_index, "skip",
+                       reason="no_candidate",
+                       perp_predicted=track.predicted_perp)
                 if track.consecutive_skips >= max_skip_strips:
                     track.alive = False
+                    _emit(strip_events, track.track_id, strip_index, "death",
+                           reason="skip_limit")
 
     # Birth new tracks for unmatched candidates
     if allow_births:
         for cj in range(n_cands):
             if cj not in matched_cands:
-                all_tracks.append(_Track(next_track_id, strip_cands[cj], n_strips))
+                c = strip_cands[cj]
+                _emit(strip_events, next_track_id, strip_index, "birth",
+                       perp_actual=c.perp_position, strength=round(c.strength, 3))
+                all_tracks.append(_Track(next_track_id, c, n_strips))
                 next_track_id += 1
 
     return next_track_id
@@ -172,6 +240,7 @@ def _track_direction(
     birth_penalty: float,
     max_skip_strips: int,
     config: PipelineConfig,
+    strip_events: dict[int, list[StripEvent]] | None = None,
 ) -> list[_Track]:
     """Track one direction (forward or backward) from seed candidates."""
     tracks: list[_Track] = []
@@ -187,6 +256,8 @@ def _track_direction(
             alive, strip_cands, spacing_px, skip_penalty, birth_penalty,
             max_skip_strips, config, tracks, next_id, n_strips,
             allow_births=False,  # Don't birth in directional passes — seed has all rows
+            strip_index=s,
+            strip_events=strip_events,
         )
 
     return tracks
@@ -235,6 +306,16 @@ def track_rows(
         len(seed_cands), seed_strip, spacing_px,
     )
 
+    # Per-strip event collection (keyed by track_id)
+    strip_events: dict[int, list[StripEvent]] = {} if diag else None
+
+    # Emit seed birth events
+    if strip_events is not None:
+        for i, c in enumerate(seed_cands):
+            _emit(strip_events, i, seed_strip, "birth",
+                   perp_actual=c.perp_position, strength=round(c.strength, 3),
+                   reason="seed")
+
     # Track forward and backward independently
     forward_strips = list(range(seed_strip + 1, n_strips))
     backward_strips = list(range(seed_strip - 1, -1, -1))
@@ -242,10 +323,12 @@ def track_rows(
     fwd_tracks = _track_direction(
         seed_cands, forward_strips, by_strip, n_strips,
         spacing_px, skip_penalty, birth_penalty, max_skip_strips, config,
+        strip_events=strip_events,
     )
     bwd_tracks = _track_direction(
         seed_cands, backward_strips, by_strip, n_strips,
         spacing_px, skip_penalty, birth_penalty, max_skip_strips, config,
+        strip_events=strip_events,
     )
 
     # Merge forward and backward: each seed candidate gets ONE merged track
@@ -320,6 +403,8 @@ def track_rows(
         # Conservative recovery: only accept groups that are clearly real rows
         min_recovery_length = max(config.min_track_length, 5)  # at least 5 matched
         next_id = len(trajectories)
+        max_recovery = 2 * len(seed_cands)  # defensive cap
+        n_recovered = 0
 
         for group in orphan_groups:
             if len(group) < min_recovery_length:
@@ -348,12 +433,23 @@ def track_rows(
 
             # Reject if this perp position is already well-covered by an existing track
             group_perp = sum(c.perp_position for c in group) / len(group)
+            if not np.isfinite(group_perp):
+                logger.warning("Recovery: skipping group with non-finite perp (n=%d)", len(group))
+                continue
             already_covered = any(
                 abs(group_perp - ep) < spacing_px * 0.4
                 for ep in existing_perps
             )
             if already_covered:
                 continue
+
+            # Defensive cap on recovery count
+            if n_recovered >= max_recovery:
+                logger.warning(
+                    "Recovery: hit cap (%d), skipping remaining %d groups",
+                    max_recovery, len(orphan_groups) - orphan_groups.index(group),
+                )
+                break
 
             traj = RowTrajectory(
                 track_id=next_id,
@@ -363,6 +459,7 @@ def track_rows(
             )
             trajectories.append(traj)
             existing_perps.append(group_perp)
+            n_recovered += 1
             next_id += 1
             if diag:
                 diag.n_recovered_trajectories += 1
@@ -375,6 +472,10 @@ def track_rows(
     trajectories.sort(key=lambda t: t.mean_perp)
     for i, t in enumerate(trajectories):
         t.track_id = i
+
+    # Attach per-strip events to diagnostics
+    if diag and strip_events:
+        diag._strip_events = strip_events  # stashed for pipeline to consume
 
     logger.info(
         "Tracking complete: %d tracks from %d seeds (min_length=%d)",
