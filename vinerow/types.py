@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Flag, auto
+from typing import Literal
 
 import numpy as np
 
@@ -94,6 +95,31 @@ class RowCandidate:
 
 
 # ---------------------------------------------------------------------------
+# Segmented Row Primitives (used by Stages 5–7)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class RowSegment:
+    """One contiguous visible or inferred section of a row."""
+    start_strip: int        # first strip of this segment
+    end_strip: int          # last strip of this segment
+    is_visible: bool        # True = matched candidates, False = inferred gap
+
+
+GapType = Literal["building", "obstacle", "signal_dropout", "unknown"]
+
+
+@dataclass
+class OcclusionGap:
+    """A detected internal gap where multiple rows are interrupted."""
+    start_strip: int
+    end_strip: int
+    affected_row_indices: list[int]   # logical row indices interrupted
+    gap_type: GapType = "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Stage 5: Tracking
 # ---------------------------------------------------------------------------
 
@@ -105,6 +131,8 @@ class RowTrajectory:
     candidates: list[RowCandidate | None]  # one per strip, None = gap
     birth_strip: int
     death_strip: int
+    segments: list[RowSegment] | None = None          # populated by stitching pass
+    source_trajectory_ids: list[int] | None = None     # if stitched from multiple tracks
 
     @property
     def n_matched(self) -> int:
@@ -137,6 +165,7 @@ class FittedRow:
     curvature_max_deg_per_m: float = 0.0
     spacing_to_prev_m: float | None = None
     local_spacing_profile: list[float] | None = None  # spacing at sample points along row
+    segments: list[RowSegment] | None = None           # visible vs inferred sections
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +185,7 @@ class QualityFlag(Flag):
     HEADLAND_DISTORTION = auto()
     HARMONIC_SPACING = auto()
     PHASE_CORRECTED = auto()
+    INTERNAL_OCCLUSION = auto()
 
 
 @dataclass
@@ -205,6 +235,9 @@ class BlockRowDetectionResult:
     meters_per_pixel: float
     tile_source: str
     zoom_level: int
+
+    # Occlusion metadata
+    occlusion_gaps: list[OcclusionGap] = field(default_factory=list)
 
     # Debug artifacts (optional — excluded from serialization by default)
     coarse_orientation: CoarseOrientation | None = field(default=None, repr=False)

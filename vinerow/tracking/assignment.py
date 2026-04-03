@@ -4,6 +4,9 @@ Row tracking via sequential linear assignment (Hungarian algorithm).
 Links candidates across strips into coherent row trajectories. Seeds from
 the densest strip (best coverage), then tracks forward and backward
 independently, merging the two passes for each seed row.
+
+Includes a recovery pass that creates trajectories from orphaned candidates
+beyond long gaps where allow_births=False prevents new track creation.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ class _Track:
         self.candidates[first_candidate.strip_index] = first_candidate
         self.last_perp = first_candidate.perp_position
         self.prev_perp = first_candidate.perp_position
+        self.birth_perp = first_candidate.perp_position  # stable identity reference
         self.birth_strip = first_candidate.strip_index
         self.last_matched_strip = first_candidate.strip_index
         self.consecutive_skips = 0
@@ -99,7 +103,7 @@ def _process_strip(
     n_tracks = len(alive_tracks)
     n_cands = len(strip_cands)
 
-    # Augmented cost matrix
+    # Augmented cost matrix for Hungarian assignment
     size = n_tracks + n_cands
     cost = np.full((size, size), 1e9, dtype=np.float64)
 
@@ -112,7 +116,7 @@ def _process_strip(
 
     # Skip costs
     for i in range(n_tracks):
-        cost[i, n_cands + i] = skip_penalty * (1 + alive_tracks[i].consecutive_skips * 0.5)
+        cost[i, n_cands + i] = skip_penalty * (1 + alive_tracks[i].consecutive_skips * config.skip_escalation_rate)
 
     # Birth costs
     for j in range(n_cands):
@@ -125,15 +129,15 @@ def _process_strip(
 
     row_ind, col_ind = linear_sum_assignment(cost)
 
-    matched_tracks = set()
-    matched_cands = set()
+    matched_tracks: set[int] = set()
+    matched_cands: set[int] = set()
 
     for ri, ci in zip(row_ind, col_ind):
         if ri < n_tracks and ci < n_cands:
             track = alive_tracks[ri]
             cand = strip_cands[ci]
-            pos_error = abs(track.last_perp - cand.perp_position)
-            if pos_error < 0.5 * spacing_px:
+            pos_error = abs(track.predicted_perp - cand.perp_position)
+            if pos_error < config.validation_threshold_factor * spacing_px:
                 track.match(cand)
                 matched_tracks.add(ri)
                 matched_cands.add(ci)
@@ -150,9 +154,9 @@ def _process_strip(
 
     # Birth new tracks for unmatched candidates
     if allow_births:
-        for j, cand in enumerate(strip_cands):
-            if j not in matched_cands:
-                all_tracks.append(_Track(next_track_id, cand, n_strips))
+        for cj in range(n_cands):
+            if cj not in matched_cands:
+                all_tracks.append(_Track(next_track_id, strip_cands[cj], n_strips))
                 next_track_id += 1
 
     return next_track_id
@@ -206,7 +210,7 @@ def track_rows(
     spacing_px = coarse.spacing_px
     skip_penalty = config.skip_penalty_factor * spacing_px
     birth_penalty = config.birth_penalty_factor * spacing_px
-    max_skip_strips = 3
+    max_skip_strips = config.max_consecutive_skips
 
     # Group candidates by strip
     by_strip: dict[int, list[RowCandidate]] = defaultdict(list)
@@ -267,6 +271,94 @@ def track_rows(
         traj = track.to_trajectory()
         if traj.n_matched >= config.min_track_length:
             trajectories.append(traj)
+
+    # Recovery pass: find orphaned candidates not matched to any track
+    # and group them into new trajectories. This handles the case where
+    # allow_births=False in directional passes causes candidates beyond
+    # a long gap to be dropped entirely.
+    #
+    # Conservative: only recover groups that look like real row segments,
+    # not edge noise or scattered false peaks.
+    matched_set: set[tuple[int, float]] = set()
+    existing_perps: list[float] = []  # perp positions already covered
+    for traj in trajectories:
+        existing_perps.append(traj.mean_perp)
+        for c in traj.candidates:
+            if c is not None:
+                matched_set.add((c.strip_index, c.perp_position))
+
+    orphaned: list[RowCandidate] = []
+    for c in candidates:
+        if (c.strip_index, c.perp_position) not in matched_set:
+            orphaned.append(c)
+
+    if orphaned:
+        logger.info("Recovery: %d orphaned candidates found", len(orphaned))
+
+        # Group orphaned candidates by perp proximity (cluster into rows)
+        orphaned.sort(key=lambda c: c.perp_position)
+        orphan_groups: list[list[RowCandidate]] = []
+        current_group: list[RowCandidate] = [orphaned[0]]
+
+        for c in orphaned[1:]:
+            if abs(c.perp_position - current_group[-1].perp_position) < spacing_px * 0.6:
+                current_group.append(c)
+            else:
+                orphan_groups.append(current_group)
+                current_group = [c]
+        orphan_groups.append(current_group)
+
+        # Conservative recovery: only accept groups that are clearly real rows
+        min_recovery_length = max(config.min_track_length, 5)  # at least 5 matched
+        next_id = len(trajectories)
+
+        for group in orphan_groups:
+            if len(group) < min_recovery_length:
+                continue
+
+            cands_arr: list[RowCandidate | None] = [None] * n_strips
+            for c in group:
+                if cands_arr[c.strip_index] is None or c.strength > cands_arr[c.strip_index].strength:
+                    cands_arr[c.strip_index] = c
+
+            first_strip = next((i for i, c in enumerate(cands_arr) if c is not None), 0)
+            last_strip = next((i for i in range(n_strips - 1, -1, -1) if cands_arr[i] is not None), 0)
+            n_matched = sum(1 for c in cands_arr if c is not None)
+            strip_span = last_strip - first_strip + 1
+
+            if n_matched < min_recovery_length:
+                continue
+
+            # Reject if strip span is too short (scattered candidates, not a row)
+            if strip_span < min_recovery_length:
+                continue
+
+            # Reject if density is too low (less than 50% of strips matched)
+            if n_matched / strip_span < 0.5:
+                continue
+
+            # Reject if this perp position is already well-covered by an existing track
+            group_perp = sum(c.perp_position for c in group) / len(group)
+            already_covered = any(
+                abs(group_perp - ep) < spacing_px * 0.4
+                for ep in existing_perps
+            )
+            if already_covered:
+                continue
+
+            traj = RowTrajectory(
+                track_id=next_id,
+                candidates=cands_arr,
+                birth_strip=first_strip,
+                death_strip=last_strip,
+            )
+            trajectories.append(traj)
+            existing_perps.append(group_perp)
+            next_id += 1
+            logger.info(
+                "  Recovered trajectory: perp=%.0f, matched=%d, strips %d-%d",
+                traj.mean_perp, n_matched, first_strip, last_strip,
+            )
 
     # Sort by mean perpendicular position
     trajectories.sort(key=lambda t: t.mean_perp)

@@ -25,8 +25,10 @@ class PipelineConfig:
     # --- Ridge detection (Stage 3) ---
     ridge_scale_factor: float = 0.2     # sigma = factor * spacing_px
     ridge_angle_tolerance_deg: float = 15.0  # suppress responses outside this angle range
-    ridge_mode: str = "gabor"             # hessian|luminance|exg_only|gabor|ensemble|hessian_small|hessian_large|ml|ml_ensemble
-    ml_model_path: str = "training/checkpoints/best_model.pth"  # path to trained U-Net checkpoint
+    ridge_mode: str = "ml"                 # hessian|luminance|exg_only|gabor|ensemble|hessian_small|hessian_large|ml|ml_ensemble
+    ml_model_path: str = "training/checkpoints_fpn/best_model.pth"  # path to trained checkpoint
+    ml_align_rows: bool = False     # rotate image to align rows vertically before ML inference
+    ml_decoder: str = "fpn"         # "unet" or "fpn"
 
     # --- Candidate extraction (Stage 4) ---
     strip_width_factor: float = 3.0     # strip width = factor * spacing_px
@@ -46,10 +48,25 @@ class PipelineConfig:
     skip_penalty_factor: float = 0.5    # gap coasting penalty = factor * spacing_px
     birth_penalty_factor: float = 0.8   # new track penalty = factor * spacing_px
     min_track_length: int = 3           # discard tracks with fewer matched candidates
+    max_consecutive_skips: int = 8      # max strips a track can coast without a match
+    validation_threshold_factor: float = 0.75  # match rejection = factor * spacing_px
+    skip_escalation_rate: float = 0.25  # skip cost multiplier per consecutive skip
+    gap_bridge_enabled: bool = False    # post-tracking gap bridge pass (legacy, unused)
+    gap_bridge_lookahead: int = 8       # max strips to search beyond track death (legacy)
+
+    # --- Post-tracking stitching (Stage 5b) ---
+    stitch_enabled: bool = True             # enable post-tracking segment stitching
+    max_stitch_gap_strips: int = 20         # max strip gap for stitching two segments
+    stitch_perp_tolerance: float = 0.5      # max perp offset = factor × spacing_px
+    stitch_slope_tolerance: float = 0.3     # max slope difference (perp units per strip)
+    min_group_occlusion_rows: int = 3       # min adjacent rows missing to flag group occlusion
+    stitch_ambiguity_ratio: float = 1.5     # best match must be this much better than 2nd best
 
     # --- Fitting (Stage 6) ---
     spline_smoothing_m: float = 0.2     # allowed deviation from smooth curve (meters)
     centerline_sample_interval_px: float = 10.0  # sample spline every N pixels
+    spline_extrapolate_factor: float = 0.0       # endpoint extrapolation = factor * spacing_px (0=off)
+    completeness_denominator_factor: float = 0.5  # completeness = n_matched / (strips * factor)
 
     # --- Post-processing (Stage 7) ---
     min_row_confidence: float = 0.15    # rows below this confidence are discarded

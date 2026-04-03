@@ -16,7 +16,7 @@ from scipy.interpolate import UnivariateSpline
 
 from vinerow.acquisition.geo_utils import pixel_to_lnglat
 from vinerow.config import PipelineConfig
-from vinerow.types import CoarseOrientation, FittedRow, RowTrajectory
+from vinerow.types import CoarseOrientation, FittedRow, RowSegment, RowTrajectory
 
 logger = logging.getLogger(__name__)
 
@@ -190,12 +190,33 @@ def _fit_single_row(
     completeness = trajectory.n_matched / max(total_strips * 0.5, 1)
     confidence *= min(completeness, 1.0)
 
+    # Build segment metadata from trajectory (if available from stitching)
+    segments = None
+    if trajectory.segments:
+        segments = list(trajectory.segments)
+        # Add inferred gap segments between visible segments
+        all_segs: list[RowSegment] = []
+        for idx, seg in enumerate(segments):
+            all_segs.append(seg)
+            if idx < len(segments) - 1:
+                next_seg = segments[idx + 1]
+                gap_start = seg.end_strip + 1
+                gap_end = next_seg.start_strip - 1
+                if gap_end >= gap_start:
+                    all_segs.append(RowSegment(
+                        start_strip=gap_start,
+                        end_strip=gap_end,
+                        is_visible=False,
+                    ))
+        segments = all_segs
+
     return FittedRow(
         row_index=trajectory.track_id,
         centerline_px=centerline_px,
         confidence=round(confidence, 3),
         length_m=round(length_m, 2),
         curvature_max_deg_per_m=round(curvature_max, 4),
+        segments=segments,
     )
 
 

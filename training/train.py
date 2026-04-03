@@ -24,7 +24,12 @@ from torch.utils.data import DataLoader
 
 import segmentation_models_pytorch as smp
 
-from training.dataset import RowLikelihoodDataset, get_train_transform, get_val_transform
+from training.dataset import (
+    RowLikelihoodDataset,
+    get_train_transform,
+    get_aligned_train_transform,
+    get_val_transform,
+)
 from training.model import create_model
 
 
@@ -156,12 +161,25 @@ def main():
     parser.add_argument("--encoder", type=str, default="mobilenet_v2")
     parser.add_argument("--output-dir", type=str, default="training/checkpoints")
     parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
+    parser.add_argument("--decoder", type=str, default="unet", choices=["unet", "fpn"])
+    parser.add_argument("--aligned", action="store_true", help="Use aligned transforms (reduced rotation)")
     parser.add_argument("--run-test", action="store_true", help="Run test evaluation only")
     parser.add_argument("--checkpoint", type=str, help="Checkpoint for test evaluation")
     args = parser.parse_args()
 
+    # Override defaults when aligned or fpn
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output_dir)
+    if args.aligned and args.data_dir == "dataset/training":
+        data_dir = Path("dataset/training_aligned")
+    if args.output_dir == "training/checkpoints":
+        parts = []
+        if args.decoder == "fpn":
+            parts.append("fpn")
+        if args.aligned:
+            parts.append("aligned")
+        if parts:
+            output_dir = Path("training/checkpoints_" + "_".join(parts))
     output_dir.mkdir(parents=True, exist_ok=True)
     device = "cpu"
 
@@ -182,9 +200,9 @@ def main():
         sys.exit(1)
 
     # Create model
-    model = create_model(encoder_name=args.encoder)
+    model = create_model(encoder_name=args.encoder, decoder_type=args.decoder)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Model: {args.encoder} encoder, {n_params / 1e6:.1f}M parameters")
+    print(f"Model: {args.encoder} encoder, {args.decoder} decoder, {n_params / 1e6:.1f}M parameters")
 
     bce_loss = nn.BCEWithLogitsLoss()
     dice_loss = smp.losses.DiceLoss(mode="binary", from_logits=True)
@@ -202,7 +220,8 @@ def main():
         return
 
     # Datasets
-    train_ds = RowLikelihoodDataset(train_patches, train_targets, transform=get_train_transform())
+    train_transform = get_aligned_train_transform() if args.aligned else get_train_transform()
+    train_ds = RowLikelihoodDataset(train_patches, train_targets, transform=train_transform)
     val_ds = RowLikelihoodDataset(val_patches, val_targets, transform=get_val_transform())
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
@@ -250,11 +269,12 @@ def main():
             f"Epoch {epoch:3d}/{args.epochs} | "
             f"Train: {train_loss:.4f} | Val: {val_loss:.4f} | "
             f"Dice: {val_dice:.4f} | Best: {best_dice:.4f}{marker} | "
-            f"LR: {lr:.1e} | {elapsed:.0f}s"
+            f"LR: {lr:.1e} | {elapsed:.0f}s",
+            flush=True,
         )
 
         if patience_counter >= args.patience:
-            print(f"\nEarly stopping at epoch {epoch} (no improvement for {args.patience} epochs)")
+            print(f"\nEarly stopping at epoch {epoch} (no improvement for {args.patience} epochs)", flush=True)
             break
 
     # Save last model and curves
@@ -264,6 +284,8 @@ def main():
     # Save training config
     config = {
         "encoder": args.encoder,
+        "decoder": args.decoder,
+        "aligned": args.aligned,
         "epochs_trained": len(train_losses),
         "batch_size": args.batch_size,
         "lr": args.lr,

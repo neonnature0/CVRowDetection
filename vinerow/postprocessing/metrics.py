@@ -15,6 +15,7 @@ from vinerow.types import (
     BlockRowDetectionResult,
     CoarseOrientation,
     FittedRow,
+    OcclusionGap,
     PreprocessedChannels,
     QualityFlag,
     RowCandidate,
@@ -43,6 +44,7 @@ def compute_block_metrics(
     image_size: tuple[int, int],
     timings: StageTimings,
     config: PipelineConfig,
+    occlusion_gaps: list[OcclusionGap] | None = None,
 ) -> BlockRowDetectionResult:
     """Compute all block-level metrics and quality flags.
 
@@ -165,6 +167,10 @@ def compute_block_metrics(
             "Possible harmonic: median_spacing=%.2fm > 4.5m", median_spacing,
         )
 
+    # Internal occlusion: flag if any occlusion gaps were detected
+    if occlusion_gaps:
+        flags |= QualityFlag.INTERNAL_OCCLUSION
+
     return BlockRowDetectionResult(
         rows=valid_rows,
         row_count=len(valid_rows),
@@ -182,6 +188,7 @@ def compute_block_metrics(
         meters_per_pixel=round(mpp, 4),
         tile_source=tile_source,
         zoom_level=zoom,
+        occlusion_gaps=occlusion_gaps or [],
         coarse_orientation=coarse,
         likelihood_map=likelihood_map,
         candidate_points=candidates,
