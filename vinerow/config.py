@@ -52,6 +52,7 @@ class PipelineConfig:
     validation_threshold_factor: float = 0.75  # match rejection = factor * spacing_px
     min_candidate_likelihood_ratio: float = 0.3  # candidate likelihood / strip mean; below = skip
     skip_escalation_rate: float = 0.25  # skip cost multiplier per consecutive skip
+    recovery_strength_ratio: float = 0.5  # recovery min strength = ratio × block median strength
     gap_bridge_enabled: bool = False    # post-tracking gap bridge pass (legacy, unused)
     gap_bridge_lookahead: int = 8       # max strips to search beyond track death (legacy)
 
@@ -62,6 +63,7 @@ class PipelineConfig:
     stitch_slope_tolerance: float = 0.3     # max slope difference (perp units per strip)
     min_group_occlusion_rows: int = 3       # min adjacent rows missing to flag group occlusion
     stitch_ambiguity_ratio: float = 1.5     # best match must be this much better than 2nd best
+    stitch_max_join_angle_deg: float = 15.0 # max direction change at stitch join point
 
     # --- Fitting (Stage 6) ---
     curvature_soft_limit: float = 10.0  # deg/m — curvature above this penalizes confidence

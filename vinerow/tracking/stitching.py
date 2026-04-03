@@ -15,6 +15,7 @@ Two stitching strategies:
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -304,6 +305,25 @@ def _stitch_pair(
     return merged
 
 
+def _join_angle_deg(left: RowTrajectory, right: RowTrajectory) -> float | None:
+    """Compute direction change (degrees) at the join between two trajectories.
+
+    Uses last 2 matched candidates of left and first 2 of right to estimate
+    the direction vectors meeting at the gap.
+    """
+    left_pts = [(c.x, c.y) for c in left.candidates if c is not None]
+    right_pts = [(c.x, c.y) for c in right.candidates if c is not None]
+    if len(left_pts) < 2 or len(right_pts) < 2:
+        return None
+    ldx = left_pts[-1][0] - left_pts[-2][0]
+    ldy = left_pts[-1][1] - left_pts[-2][1]
+    rdx = right_pts[1][0] - right_pts[0][0]
+    rdy = right_pts[1][1] - right_pts[0][1]
+    dot = ldx * rdx + ldy * rdy
+    cross = ldx * rdy - ldy * rdx
+    return abs(math.degrees(math.atan2(cross, dot)))
+
+
 def _stitch_score(
     left: RowTrajectory,
     right: RowTrajectory,
@@ -346,11 +366,25 @@ def _stitch_score(
     else:
         slope_diff = 0.0
 
-    # Combined score: weighted perp offset + slope difference + gap penalty
+    # Strength penalty: penalize weak-to-weak stitches
+    left_strength = left.mean_strength
+    right_strength = right.mean_strength
+    strength_penalty = 0.3 * (2.0 - left_strength - right_strength)
+
+    # Combined score: weighted perp offset + slope difference + gap + strength
     score = (
         perp_diff / spacing_px          # normalized perp offset (0-0.5)
         + 0.5 * slope_diff              # slope inconsistency
         + 0.1 * gap / config.max_stitch_gap_strips  # small penalty for larger gaps
+        + strength_penalty              # weak segments penalized
+    )
+
+    logger.debug(
+        "Stitch score: traj %d→%d: perp=%.3f slope=%.3f gap=%.3f strength=%.3f total=%.3f",
+        left.track_id, right.track_id,
+        perp_diff / spacing_px, 0.5 * slope_diff,
+        0.1 * gap / config.max_stitch_gap_strips,
+        strength_penalty, score,
     )
     return score
 
@@ -469,7 +503,19 @@ def _group_stitch(
                 li, ri,
             )
 
-    return order_safe
+    # Reject pairs with excessive direction change at join
+    angle_safe: list[tuple[int, int]] = []
+    for li, ri in order_safe:
+        angle = _join_angle_deg(trajectories[li], trajectories[ri])
+        if angle is not None and angle > config.stitch_max_join_angle_deg:
+            logger.debug(
+                "Rejected join-angle stitch: traj %d→%d (angle=%.1f deg > %.1f)",
+                li, ri, angle, config.stitch_max_join_angle_deg,
+            )
+            continue
+        angle_safe.append((li, ri))
+
+    return angle_safe
 
 
 def stitch_trajectories(
@@ -568,7 +614,15 @@ def stitch_trajectories(
 
             if second_best == float("inf") or \
                second_best / max(best_score, 1e-6) >= config.stitch_ambiguity_ratio:
-                all_merges.append((i, best_j))
+                # Check join angle before accepting
+                angle = _join_angle_deg(trajectories[i], trajectories[best_j])
+                if angle is not None and angle > config.stitch_max_join_angle_deg:
+                    logger.debug(
+                        "Rejected pairwise stitch join angle: traj %d→%d (angle=%.1f deg)",
+                        i, best_j, angle,
+                    )
+                else:
+                    all_merges.append((i, best_j))
             else:
                 logger.debug(
                     "Rejected ambiguous pairwise stitch: traj %d→%d "
