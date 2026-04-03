@@ -67,6 +67,8 @@ class PipelineConfig:
 
     # --- Fitting (Stage 6) ---
     curvature_soft_limit: float = 10.0  # deg/m — curvature above this penalizes confidence
+    endpoint_trim_likelihood_ratio: float = 0.3  # trim threshold = ratio × block median likelihood
+    endpoint_trim_min_run: int = 3               # consecutive weak samples before trimming
     spline_smoothing_m: float = 0.2     # allowed deviation from smooth curve (meters)
     centerline_sample_interval_px: float = 10.0  # sample spline every N pixels
     spline_extrapolate_factor: float = 0.0       # endpoint extrapolation = factor * spacing_px (0=off)
