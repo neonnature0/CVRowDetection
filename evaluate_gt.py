@@ -211,6 +211,7 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
         image_bgr=image_bgr, mask=mask, mpp=run_mpp, lat=cx_lat,
         zoom=zoom, tile_size=source.tile_size, tile_origin=tile_origin,
         tile_source=source_name, config=config,
+        block_name=block_name, vineyard_name=vineyard,
     )
     elapsed = time.perf_counter() - t0
 

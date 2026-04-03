@@ -162,37 +162,34 @@ def draw_row_overlay(
         for i in range(len(clipped) - 1):
             cv2.line(canvas, clipped[i], clipped[i + 1], color, 2, cv2.LINE_AA)
 
-    # Determine left-to-right ordering for row numbers
-    reverse = False
-    first_valid = next((c for c in clipped_rows if len(c) >= 2), None)
-    last_valid = next((c for c in reversed(clipped_rows) if len(c) >= 2), None)
-    if first_valid and last_valid:
-        if first_valid[0][0] > last_valid[0][0]:
-            reverse = True
-
-    # Row number labels at top endpoint
-    (_, digit_h), _ = cv2.getTextSize("8", cv2.FONT_HERSHEY_SIMPLEX, num_font, num_thick)
-    stagger = int(digit_h * 1.6)
-    label_idx = 0
-    for idx, row in enumerate(rows):
-        display_n = (n_rows - idx) if reverse else (idx + 1)
-        is_endpoint = idx == 0 or idx == n_rows - 1
-        if not is_endpoint and display_n % label_every != 0:
-            continue
-
-        clipped = clipped_rows[idx]
-        if len(clipped) < 2:
-            continue
-
-        # Top = min y
-        top = clipped[0] if clipped[0][1] <= clipped[-1][1] else clipped[-1]
-        label = str(display_n)
-        (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, num_font, num_thick)
-        y_off = int(digit_h * 0.8) + (stagger if label_idx % 2 == 1 else 0)
-        label_idx += 1
-        lx = max(2, min(top[0] - tw // 2, w - tw - 2))
-        ly = max(digit_h + 4, top[1] - y_off)
-        _put_text_outlined(canvas, label, (lx, ly), num_font, num_thick, fg=(0, 255, 255))
+    # Row number labels disabled for cleaner overlays.
+    # To re-enable, uncomment the block below.
+    # ---
+    # reverse = False
+    # first_valid = next((c for c in clipped_rows if len(c) >= 2), None)
+    # last_valid = next((c for c in reversed(clipped_rows) if len(c) >= 2), None)
+    # if first_valid and last_valid:
+    #     if first_valid[0][0] > last_valid[0][0]:
+    #         reverse = True
+    # (_, digit_h), _ = cv2.getTextSize("8", cv2.FONT_HERSHEY_SIMPLEX, num_font, num_thick)
+    # stagger = int(digit_h * 1.6)
+    # label_idx = 0
+    # for idx, row in enumerate(rows):
+    #     display_n = (n_rows - idx) if reverse else (idx + 1)
+    #     is_endpoint = idx == 0 or idx == n_rows - 1
+    #     if not is_endpoint and display_n % label_every != 0:
+    #         continue
+    #     clipped = clipped_rows[idx]
+    #     if len(clipped) < 2:
+    #         continue
+    #     top = clipped[0] if clipped[0][1] <= clipped[-1][1] else clipped[-1]
+    #     label = str(display_n)
+    #     (tw, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, num_font, num_thick)
+    #     y_off = int(digit_h * 0.8) + (stagger if label_idx % 2 == 1 else 0)
+    #     label_idx += 1
+    #     lx = max(2, min(top[0] - tw // 2, w - tw - 2))
+    #     ly = max(digit_h + 4, top[1] - y_off)
+    #     _put_text_outlined(canvas, label, (lx, ly), num_font, num_thick, fg=(0, 255, 255))
 
     # Block boundary
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -468,6 +465,7 @@ def main():
                 image_bgr=image_bgr, mask=mask, mpp=mpp, lat=cx_lat,
                 zoom=zoom, tile_size=source.tile_size, tile_origin=tile_origin,
                 tile_source=source_name, config=config,
+                block_name=name, vineyard_name=vineyard,
             )
         except Exception as e:
             logger.error("Pipeline failed: %s", e)

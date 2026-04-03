@@ -223,6 +223,13 @@ def track_rows(
     seed_strip = max(by_strip.keys(), key=lambda s: len(by_strip[s]))
     seed_cands = by_strip[seed_strip]
 
+    # Record seed info in diagnostics
+    from vinerow.debug.row_diagnostics import current as diag_current
+    diag = diag_current()
+    if diag:
+        diag.seed_strip = seed_strip
+        diag.n_seed_candidates = len(seed_cands)
+
     logger.info(
         "Tracking: %d seed candidates from strip %d (densest), spacing_px=%.1f",
         len(seed_cands), seed_strip, spacing_px,
@@ -294,6 +301,8 @@ def track_rows(
 
     if orphaned:
         logger.info("Recovery: %d orphaned candidates found", len(orphaned))
+        if diag:
+            diag.n_orphaned_candidates = len(orphaned)
 
         # Group orphaned candidates by perp proximity (cluster into rows)
         orphaned.sort(key=lambda c: c.perp_position)
@@ -355,6 +364,8 @@ def track_rows(
             trajectories.append(traj)
             existing_perps.append(group_perp)
             next_id += 1
+            if diag:
+                diag.n_recovered_trajectories += 1
             logger.info(
                 "  Recovered trajectory: perp=%.0f, matched=%d, strips %d-%d",
                 traj.mean_perp, n_matched, first_strip, last_strip,

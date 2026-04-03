@@ -142,6 +142,8 @@ def process_block(block: dict, config: PipelineConfig) -> dict | None:
         tile_origin=tile_origin,
         tile_source=source_name,
         config=config,
+        block_name=name,
+        vineyard_name=vineyard,
     )
 
     if result is None:
