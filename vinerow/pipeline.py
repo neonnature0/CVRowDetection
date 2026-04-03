@@ -220,6 +220,7 @@ def run_pipeline(
     from vinerow.fitting.splines import fit_centerlines
     fitted_rows = fit_centerlines(
         trajectories, coarse, mpp, preprocessed.mask, tile_origin, zoom, tile_size, config,
+        likelihood_map=likelihood_map,
     )
     timings.fitting = time.perf_counter() - t0
     logger.info(

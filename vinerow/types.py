@@ -90,8 +90,9 @@ class RowCandidate:
     y: float                      # image y coordinate
     strip_index: int
     perp_position: float          # perpendicular distance from reference axis
-    strength: float               # 0–1 from likelihood map peak height
+    strength: float               # 0–1 from likelihood map peak height (normalized per-strip)
     half_width_px: float = 0.0    # peak half-width in pixels
+    likelihood: float = 0.0       # raw likelihood map value at this position (0–1, not normalized)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +167,7 @@ class FittedRow:
     spacing_to_prev_m: float | None = None
     local_spacing_profile: list[float] | None = None  # spacing at sample points along row
     segments: list[RowSegment] | None = None           # visible vs inferred sections
+    likelihood_profile: list[float] | None = None      # likelihood values sampled along centerline
 
 
 # ---------------------------------------------------------------------------
