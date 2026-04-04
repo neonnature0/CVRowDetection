@@ -174,8 +174,9 @@ def _detect_support_gaps(
     perp_x: float,
     perp_y: float,
     config: PipelineConfig,
+    exg: np.ndarray | None = None,
 ) -> list[RowSegment]:
-    """Detect unsupported spans using strip-level candidate support + hysteresis."""
+    """Detect unsupported spans using strip-level candidate support + vegetation check."""
     n_strips = len(trajectory.candidates)
     n_cl = len(centerline_px)
 
@@ -224,6 +225,49 @@ def _detect_support_gaps(
         n_demoted_strength, n_demoted_residual,
         sum(strip_supported), n_strips,
     )
+
+    # Vegetation check: demote strips where ExG is low (buildings, bare ground)
+    # This overrides candidate support — a candidate on a building is not real support
+    # Use a small window average (±win pixels) to avoid single-pixel noise
+    n_demoted_veg = 0
+    if exg is not None and config.gap_exg_ratio > 0:
+        exg_h, exg_w = exg.shape[:2]
+        win = max(2, int(coarse.spacing_px * 0.3))  # ~30% of row spacing
+
+        def _sample_exg_window(px: float, py: float) -> float:
+            ix, iy = int(round(px)), int(round(py))
+            y0, y1 = max(0, iy - win), min(exg_h, iy + win + 1)
+            x0, x1 = max(0, ix - win), min(exg_w, ix + win + 1)
+            if y1 > y0 and x1 > x0:
+                return float(np.mean(exg[y0:y1, x0:x1]))
+            return 0.0
+
+        # Sample ExG at all supported strip centerline positions
+        exg_values = []
+        for s in range(n_strips):
+            if not strip_supported[s]:
+                continue
+            cl_idx = strip_to_cl.get(s, -1)
+            if 0 <= cl_idx < n_cl:
+                exg_values.append(_sample_exg_window(*centerline_px[cl_idx]))
+        if exg_values:
+            row_median_exg = float(np.median(exg_values))
+            exg_threshold = row_median_exg * config.gap_exg_ratio
+            # Demote strips where ExG is well below the row's own median
+            for s in range(n_strips):
+                if not strip_supported[s]:
+                    continue
+                cl_idx = strip_to_cl.get(s, -1)
+                if 0 <= cl_idx < n_cl:
+                    val = _sample_exg_window(*centerline_px[cl_idx])
+                    if val < exg_threshold:
+                        strip_supported[s] = False
+                        n_demoted_veg += 1
+            if n_demoted_veg > 0:
+                logger.debug(
+                    "Gap detect row %d: ExG demoted %d strips (median_exg=%.0f, thresh=%.0f)",
+                    trajectory.track_id, n_demoted_veg, row_median_exg, exg_threshold,
+                )
 
     # Active strip range
     first_sup = next((s for s in range(n_strips) if strip_supported[s]), -1)
@@ -304,6 +348,7 @@ def _fit_single_row(
     likelihood_map: np.ndarray | None = None,
     block_median_lk: float = 0.0,
     strip_centers: list[float] | None = None,
+    exg: np.ndarray | None = None,
 ) -> FittedRow | None:
     """Fit a smooth centerline to a single row trajectory."""
     matched = [(c.strip_index, c) for c in trajectory.candidates if c is not None]
@@ -521,6 +566,7 @@ def _fit_single_row(
             centerline_px, cl_along, lk_profile, trajectory, strip_centers,
             coarse, mpp, block_median_lk,
             ref_x, ref_y, perp_x, perp_y, config,
+            exg=exg,
         )
         # Only use support segments if they actually contain gaps
         # Otherwise the full centerline is better (avoids truncation)
@@ -549,6 +595,7 @@ def fit_centerlines(
     config: PipelineConfig,
     likelihood_map: np.ndarray | None = None,
     strip_centers: list[float] | None = None,
+    exg: np.ndarray | None = None,
 ) -> list[FittedRow]:
     """Fit smooth centerlines to all row trajectories.
 
@@ -575,7 +622,7 @@ def fit_centerlines(
     fitted: list[FittedRow] = []
 
     for traj in trajectories:
-        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map, block_median_lk, strip_centers)
+        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map, block_median_lk, strip_centers, exg)
         if row is None:
             continue
         fitted.append(row)
