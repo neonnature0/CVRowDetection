@@ -89,17 +89,29 @@ def _put_text_outlined(
 
 def _clip_line_to_mask(
     pts: list[tuple[float, float]], mask: np.ndarray,
-) -> list[tuple[int, int]]:
-    """Keep only the portion of a polyline inside the mask."""
+) -> list[list[tuple[int, int]]]:
+    """Split a polyline into contiguous sub-polylines that stay inside the mask.
+
+    Returns a list of segments (each a list of (x, y) points). Points outside
+    the mask break the current segment, preventing lines from bridging across
+    cut-outs or block boundary notches.
+    """
     h, w = mask.shape[:2]
     if len(pts) < 2:
         return []
-    valid: list[tuple[int, int]] = []
+    segments: list[list[tuple[int, int]]] = []
+    current: list[tuple[int, int]] = []
     for px, py in pts:
         x, y = int(round(px)), int(round(py))
         if 0 <= x < w and 0 <= y < h and mask[y, x] > 0:
-            valid.append((x, y))
-    return valid
+            current.append((x, y))
+        else:
+            if len(current) >= 2:
+                segments.append(current)
+            current = []
+    if len(current) >= 2:
+        segments.append(current)
+    return segments
 
 
 def _downsample(image: np.ndarray, max_dim: int = 2000) -> np.ndarray:
@@ -142,15 +154,8 @@ def draw_row_overlay(
     num_font = max(0.30, spacing_px * label_every / 90.0)
     num_thick = max(1, int(num_font * 1.3 + 0.5))
 
-    # Clip and draw each row
-    clipped_rows: list[list[tuple[int, int]]] = []
+    # Clip and draw each row — respect visible/inferred segments
     for row in rows:
-        clipped = _clip_line_to_mask(row.centerline_px, mask)
-        clipped_rows.append(clipped)
-
-        if len(clipped) < 2:
-            continue
-
         # Color by confidence
         if row.confidence >= 0.7:
             color = (0, 255, 0)    # green
@@ -159,8 +164,22 @@ def draw_row_overlay(
         else:
             color = (0, 0, 255)    # red
 
-        for i in range(len(clipped) - 1):
-            cv2.line(canvas, clipped[i], clipped[i + 1], color, 2, cv2.LINE_AA)
+        if row.segments and any(s.start_point_idx >= 0 for s in row.segments):
+            # Support-based segments with point indices — draw only visible
+            for seg in row.segments:
+                if not seg.is_visible or seg.start_point_idx < 0:
+                    continue
+                seg_pts = row.centerline_px[seg.start_point_idx:seg.end_point_idx + 1]
+                clipped = _clip_line_to_mask(seg_pts, mask)
+                for sub in clipped:
+                    for i in range(len(sub) - 1):
+                        cv2.line(canvas, sub[i], sub[i + 1], color, 2, cv2.LINE_AA)
+        else:
+            # Fallback: clip entire centerline (no gap segments)
+            clipped = _clip_line_to_mask(row.centerline_px, mask)
+            for sub in clipped:
+                for i in range(len(sub) - 1):
+                    cv2.line(canvas, sub[i], sub[i + 1], color, 2, cv2.LINE_AA)
 
     # Row number labels disabled for cleaner overlays.
     # To re-enable, uncomment the block below.

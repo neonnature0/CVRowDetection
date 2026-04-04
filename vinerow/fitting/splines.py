@@ -87,6 +87,214 @@ def _trim_endpoints(
     return trimmed_cl, trimmed_lk, length
 
 
+def _map_strips_to_centerline(
+    strip_centers: list[float],
+    cl_along: list[float],
+) -> dict[int, int]:
+    """Map strip indices to nearest centerline point indices.
+
+    Uses the fitting stage's own along-axis positions (cl_along), not a
+    reconstructed projection. Handles reversed centerline direction.
+    """
+    mapping: dict[int, int] = {}
+    n_cl = len(cl_along)
+    if n_cl == 0:
+        return mapping
+    for s, sc in enumerate(strip_centers):
+        best_idx = 0
+        best_dist = abs(cl_along[0] - sc)
+        for ci in range(1, n_cl):
+            d = abs(cl_along[ci] - sc)
+            if d < best_dist:
+                best_dist = d
+                best_idx = ci
+        mapping[s] = best_idx
+    return mapping
+
+
+def _hysteresis_segments(
+    supported: list[bool],
+    first_strip: int,
+    last_strip: int,
+    min_unsup: int,
+    min_sup: int,
+) -> list[RowSegment]:
+    """Convert a boolean support array into segments with hysteresis debouncing."""
+    segments: list[RowSegment] = []
+    in_visible = supported[first_strip]
+    seg_start = first_strip
+    run = 0
+
+    for s in range(first_strip, last_strip + 1):
+        if in_visible:
+            if not supported[s]:
+                run += 1
+                if run >= min_unsup:
+                    gap_start = s - run + 1
+                    if gap_start > seg_start:
+                        segments.append(RowSegment(
+                            start_strip=seg_start, end_strip=gap_start - 1, is_visible=True))
+                    seg_start = gap_start
+                    in_visible = False
+                    run = 0
+            else:
+                run = 0
+        else:
+            if supported[s]:
+                run += 1
+                if run >= min_sup:
+                    vis_start = s - run + 1
+                    if vis_start > seg_start:
+                        segments.append(RowSegment(
+                            start_strip=seg_start, end_strip=vis_start - 1, is_visible=False))
+                    seg_start = vis_start
+                    in_visible = True
+                    run = 0
+            else:
+                run = 0
+
+    if seg_start <= last_strip:
+        segments.append(RowSegment(
+            start_strip=seg_start, end_strip=last_strip, is_visible=in_visible))
+
+    return segments
+
+
+def _detect_support_gaps(
+    centerline_px: list[tuple[float, float]],
+    cl_along: list[float],
+    lk_profile: list[float] | None,
+    trajectory: RowTrajectory,
+    strip_centers: list[float],
+    coarse: CoarseOrientation,
+    mpp: float,
+    block_median_lk: float,
+    ref_x: float,
+    ref_y: float,
+    perp_x: float,
+    perp_y: float,
+    config: PipelineConfig,
+) -> list[RowSegment]:
+    """Detect unsupported spans using strip-level candidate support + hysteresis."""
+    n_strips = len(trajectory.candidates)
+    n_cl = len(centerline_px)
+
+    if n_cl < 4 or n_strips < 4:
+        return [RowSegment(start_strip=0, end_strip=n_strips - 1, is_visible=True,
+                           start_point_idx=0, end_point_idx=n_cl - 1)]
+
+    # Strip-to-centerline mapping (uses fitting's own along-axis frame)
+    strip_to_cl = _map_strips_to_centerline(strip_centers, cl_along)
+
+    # Row-relative strength threshold
+    matched_strengths = [c.strength for c in trajectory.candidates if c is not None]
+    row_median_strength = float(np.median(matched_strengths)) if matched_strengths else 0.5
+    strength_threshold = max(
+        config.gap_min_candidate_strength,
+        row_median_strength * config.gap_strength_ratio,
+    )
+
+    # Per-strip support: candidate present + strong enough + close to fitted centerline
+    strip_supported = [False] * n_strips
+    n_demoted_strength = 0
+    n_demoted_residual = 0
+    for s in range(n_strips):
+        c = trajectory.candidates[s]
+        if c is None:
+            continue
+        if c.strength < strength_threshold:
+            n_demoted_strength += 1
+            continue
+        # Residual check: candidate perp vs fitted centerline perp at this strip
+        cl_idx = strip_to_cl.get(s, -1)
+        if cl_idx >= 0 and cl_idx < n_cl:
+            fitted_perp = (centerline_px[cl_idx][0] - ref_x) * perp_x + \
+                          (centerline_px[cl_idx][1] - ref_y) * perp_y
+            cand_perp = (c.x - ref_x) * perp_x + (c.y - ref_y) * perp_y
+            residual = abs(fitted_perp - cand_perp)
+            if residual > config.gap_max_candidate_residual_factor * coarse.spacing_px:
+                n_demoted_residual += 1
+                continue
+        strip_supported[s] = True
+
+    logger.debug(
+        "Gap detect row %d: median_str=%.3f, thresh=%.3f, "
+        "demoted_str=%d, demoted_res=%d, supported=%d/%d",
+        trajectory.track_id, row_median_strength, strength_threshold,
+        n_demoted_strength, n_demoted_residual,
+        sum(strip_supported), n_strips,
+    )
+
+    # Active strip range
+    first_sup = next((s for s in range(n_strips) if strip_supported[s]), -1)
+    last_sup = next((s for s in range(n_strips - 1, -1, -1) if strip_supported[s]), -1)
+    if first_sup < 0:
+        return [RowSegment(start_strip=0, end_strip=n_strips - 1, is_visible=False,
+                           start_point_idx=0, end_point_idx=n_cl - 1)]
+
+    # Likelihood dilation: extend supported edges by up to N strips
+    if lk_profile is not None and config.gap_likelihood_dilation_strips > 0:
+        lk_thresh = config.gap_likelihood_threshold * block_median_lk
+        dil = config.gap_likelihood_dilation_strips
+        dilated = list(strip_supported)
+        for s in range(first_sup, last_sup + 1):
+            if dilated[s]:
+                continue
+            near_supported = any(
+                dilated[ns]
+                for ns in range(max(first_sup, s - dil), min(last_sup + 1, s + dil + 1))
+                if ns != s
+            )
+            if not near_supported:
+                continue
+            cl_idx = strip_to_cl.get(s, -1)
+            if 0 <= cl_idx < len(lk_profile) and lk_profile[cl_idx] >= lk_thresh:
+                dilated[s] = True
+        strip_supported = dilated
+
+    # Hysteresis segmentation
+    segments = _hysteresis_segments(
+        strip_supported, first_sup, last_sup,
+        config.gap_min_consecutive_unsupported,
+        config.gap_min_consecutive_supported,
+    )
+
+    # Map strip ranges to centerline point indices
+    for seg in segments:
+        seg.start_point_idx = strip_to_cl.get(seg.start_strip, 0)
+        seg.end_point_idx = strip_to_cl.get(seg.end_strip, n_cl - 1)
+        # Ensure point indices don't invert
+        if seg.start_point_idx > seg.end_point_idx:
+            seg.start_point_idx, seg.end_point_idx = seg.end_point_idx, seg.start_point_idx
+
+    # Discard very short visible segments
+    min_vis_m = config.gap_min_visible_segment_length_m
+    for seg in segments:
+        if seg.is_visible and seg.start_point_idx >= 0 and seg.end_point_idx > seg.start_point_idx:
+            seg_len = sum(
+                math.hypot(centerline_px[j][0] - centerline_px[j-1][0],
+                           centerline_px[j][1] - centerline_px[j-1][1])
+                for j in range(seg.start_point_idx + 1, seg.end_point_idx + 1)
+            ) * mpp
+            if seg_len < min_vis_m:
+                seg.is_visible = False
+
+    # Merge adjacent same-type segments
+    if len(segments) > 1:
+        merged = [segments[0]]
+        for seg in segments[1:]:
+            if seg.is_visible == merged[-1].is_visible:
+                merged[-1] = RowSegment(
+                    start_strip=merged[-1].start_strip, end_strip=seg.end_strip,
+                    is_visible=seg.is_visible,
+                    start_point_idx=merged[-1].start_point_idx, end_point_idx=seg.end_point_idx)
+            else:
+                merged.append(seg)
+        segments = merged
+
+    return segments
+
+
 def _fit_single_row(
     trajectory: RowTrajectory,
     coarse: CoarseOrientation,
@@ -95,6 +303,7 @@ def _fit_single_row(
     config: PipelineConfig,
     likelihood_map: np.ndarray | None = None,
     block_median_lk: float = 0.0,
+    strip_centers: list[float] | None = None,
 ) -> FittedRow | None:
     """Fit a smooth centerline to a single row trajectory."""
     matched = [(c.strip_index, c) for c in trajectory.candidates if c is not None]
@@ -301,6 +510,21 @@ def _fit_single_row(
             centerline_px, lk_profile, mpp, block_median_lk, config,
         )
 
+    # Post-fit gap detection: identify unsupported spans via strip-level support
+    if strip_centers is not None and len(centerline_px) >= 4:
+        # Build cl_along from the same frame used in fitting
+        cl_along = [
+            ((px - ref_x) * row_dx + (py - ref_y) * row_dy)
+            for px, py in centerline_px
+        ]
+        support_segments = _detect_support_gaps(
+            centerline_px, cl_along, lk_profile, trajectory, strip_centers,
+            coarse, mpp, block_median_lk,
+            ref_x, ref_y, perp_x, perp_y, config,
+        )
+        if any(not s.is_visible for s in support_segments):
+            segments = support_segments
+
     return FittedRow(
         row_index=trajectory.track_id,
         centerline_px=centerline_px,
@@ -322,6 +546,7 @@ def fit_centerlines(
     tile_size: int,
     config: PipelineConfig,
     likelihood_map: np.ndarray | None = None,
+    strip_centers: list[float] | None = None,
 ) -> list[FittedRow]:
     """Fit smooth centerlines to all row trajectories.
 
@@ -348,7 +573,7 @@ def fit_centerlines(
     fitted: list[FittedRow] = []
 
     for traj in trajectories:
-        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map, block_median_lk)
+        row = _fit_single_row(traj, coarse, mpp, mask, config, likelihood_map, block_median_lk, strip_centers)
         if row is None:
             continue
         fitted.append(row)

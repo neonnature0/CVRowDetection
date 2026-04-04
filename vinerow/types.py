@@ -106,6 +106,8 @@ class RowSegment:
     start_strip: int        # first strip of this segment
     end_strip: int          # last strip of this segment
     is_visible: bool        # True = matched candidates, False = inferred gap
+    start_point_idx: int = -1  # index into FittedRow.centerline_px (-1 = not set)
+    end_point_idx: int = -1    # index into FittedRow.centerline_px (-1 = not set)
 
 
 GapType = Literal["building", "obstacle", "signal_dropout", "unknown"]

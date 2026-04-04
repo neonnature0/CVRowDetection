@@ -221,6 +221,7 @@ def run_pipeline(
     fitted_rows = fit_centerlines(
         trajectories, coarse, mpp, preprocessed.mask, tile_origin, zoom, tile_size, config,
         likelihood_map=likelihood_map,
+        strip_centers=strip_centers,
     )
     timings.fitting = time.perf_counter() - t0
     logger.info(
