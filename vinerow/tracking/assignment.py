@@ -188,7 +188,11 @@ def _process_strip(
         if ri < n_tracks and ci < n_cands:
             track = alive_tracks[ri]
             cand = strip_cands[ci]
-            pos_error = abs(track.predicted_perp - cand.perp_position)
+            # Use the more forgiving of extrapolated or last-known position
+            pos_error_pred = abs(track.predicted_perp - cand.perp_position)
+            pos_error_last = abs(track.last_perp - cand.perp_position)
+            pos_error = min(pos_error_pred, pos_error_last)
+            gate_winner = "pred" if pos_error_pred <= pos_error_last else "last_perp"
             if pos_error < config.validation_threshold_factor * spacing_px:
                 # Likelihood-corridor check: reject if candidate likelihood
                 # is too weak relative to the strip mean
@@ -213,7 +217,8 @@ def _process_strip(
                        perp_predicted=track.predicted_perp,
                        perp_actual=cand.perp_position,
                        position_error=round(pos_error, 2),
-                       strength=round(cand.strength, 3))
+                       strength=round(cand.strength, 3),
+                       reason=gate_winner)
             else:
                 track.skip()
                 _emit(strip_events, track.track_id, strip_index, "skip",
