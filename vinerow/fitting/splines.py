@@ -511,7 +511,6 @@ def _fit_single_row(
         )
 
     # Post-fit gap detection: identify unsupported spans via strip-level support
-    # Always run when strip_centers available — ensures point indices are set
     if strip_centers is not None and len(centerline_px) >= 4:
         # Build cl_along from the same frame used in fitting
         cl_along = [
@@ -523,7 +522,10 @@ def _fit_single_row(
             coarse, mpp, block_median_lk,
             ref_x, ref_y, perp_x, perp_y, config,
         )
-        segments = support_segments
+        # Only use support segments if they actually contain gaps
+        # Otherwise the full centerline is better (avoids truncation)
+        if any(not s.is_visible for s in support_segments):
+            segments = support_segments
 
     return FittedRow(
         row_index=trajectory.track_id,
