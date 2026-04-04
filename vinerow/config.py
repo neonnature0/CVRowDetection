@@ -80,9 +80,10 @@ class PipelineConfig:
     gap_max_candidate_residual_factor: float = 0.3 # candidate perp residual must be < factor * spacing_px
     gap_likelihood_dilation_strips: int = 2        # extend supported runs by up to N strips if likelihood is strong
     gap_likelihood_threshold: float = 0.3          # likelihood >= factor * block_median for dilation
-    gap_min_consecutive_unsupported: int = 5       # consecutive unsupported strips to open a gap
-    gap_min_consecutive_supported: int = 3         # consecutive supported strips to close a gap
+    gap_min_consecutive_unsupported: int = 3       # consecutive unsupported strips to open a gap
+    gap_min_consecutive_supported: int = 2         # consecutive supported strips to close a gap
     gap_min_visible_segment_length_m: float = 2.0  # visible segments shorter than this demoted to inferred
+    gap_exg_ratio: float = 0.6                     # ExG below ratio * row_median_exg = non-vegetation (building/bare ground)
 
     # --- Post-processing (Stage 7) ---
     min_row_confidence: float = 0.15    # rows below this confidence are discarded

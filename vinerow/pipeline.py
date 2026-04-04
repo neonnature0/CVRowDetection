@@ -222,6 +222,7 @@ def run_pipeline(
         trajectories, coarse, mpp, preprocessed.mask, tile_origin, zoom, tile_size, config,
         likelihood_map=likelihood_map,
         strip_centers=strip_centers,
+        exg=preprocessed.exg,
     )
     timings.fitting = time.perf_counter() - t0
     logger.info(
