@@ -74,6 +74,16 @@ class PipelineConfig:
     spline_extrapolate_factor: float = 0.0       # endpoint extrapolation = factor * spacing_px (0=off)
     completeness_denominator_factor: float = 0.5  # completeness = n_matched / (strips * factor)
 
+    # --- Post-fit gap detection ---
+    gap_min_candidate_strength: float = 0.10       # hard floor: candidates below this never count as support
+    gap_strength_ratio: float = 0.5                # relative threshold: strength >= ratio * row_median_strength
+    gap_max_candidate_residual_factor: float = 0.3 # candidate perp residual must be < factor * spacing_px
+    gap_likelihood_dilation_strips: int = 2        # extend supported runs by up to N strips if likelihood is strong
+    gap_likelihood_threshold: float = 0.3          # likelihood >= factor * block_median for dilation
+    gap_min_consecutive_unsupported: int = 5       # consecutive unsupported strips to open a gap
+    gap_min_consecutive_supported: int = 3         # consecutive supported strips to close a gap
+    gap_min_visible_segment_length_m: float = 2.0  # visible segments shorter than this demoted to inferred
+
     # --- Post-processing (Stage 7) ---
     min_row_confidence: float = 0.15    # rows below this confidence are discarded
     min_row_length_fraction: float = 0.2  # rows shorter than this fraction of max are discarded
