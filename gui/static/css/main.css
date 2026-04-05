@@ -129,6 +129,45 @@ main { flex: 1; position: relative; overflow: hidden; }
 .card-actions { display: flex; gap: 4px; padding: 0 10px 10px; }
 .card-expanded { padding: 8px; background: #111; }
 
+/* ── Tune Panel ── */
+.tune-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: var(--bg-dark); display: flex; flex-direction: column;
+}
+.tune-header {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.tune-header .name { font-family: monospace; font-weight: 600; }
+.tune-body { flex: 1; display: flex; overflow: hidden; }
+.tune-controls {
+  width: 340px; flex-shrink: 0; padding: 16px; overflow-y: auto;
+  border-right: 1px solid var(--border); background: var(--bg-panel);
+}
+.tune-comparison { flex: 1; padding: 16px; overflow-y: auto; }
+
+.tune-param { margin-bottom: 14px; padding: 8px; border-radius: 6px; background: var(--bg-card); }
+.tune-param-modified { border-left: 3px solid var(--accent); }
+.tune-label { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.tune-stage { font-size: 10px; color: var(--text-muted); background: var(--bg-dark); padding: 1px 5px; border-radius: 3px; }
+.tune-description { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.4; }
+
+.tune-select {
+  width: 100%; padding: 6px; background: var(--bg-dark); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; font-size: 12px;
+}
+.tune-slider-row { display: flex; align-items: center; gap: 8px; }
+.tune-slider { flex: 1; accent-color: var(--accent); }
+.tune-value { font-family: monospace; font-size: 12px; min-width: 40px; text-align: right; }
+
+.tune-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 12px; font-size: 12px; }
+
+.tune-image { max-width: 100%; border-radius: 4px; cursor: pointer; }
+.tune-image:hover { opacity: 0.9; }
+
+.tune-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.tune-side-by-side h3 { font-size: 13px; }
+
 /* ── Lightbox (full-screen zoom/pan viewer) ── */
 [x-cloak] { display: none !important; }
 .lightbox-overlay {

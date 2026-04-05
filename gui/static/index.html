@@ -24,6 +24,7 @@
   <script src="/js/lightbox.js"></script>
   <script src="/js/library-view.js"></script>
   <script src="/js/annotate-view.js"></script>
+  <script src="/js/tune-panel.js"></script>
   <script src="/js/train-view.js"></script>
   <script src="/js/verify-view.js"></script>
 </head>
@@ -191,6 +192,9 @@
                       @click="runDetection(block.name)"
                       :disabled="detecting === block.name"
                       x-text="detecting === block.name ? 'Detecting...' : 'Detect'"></button>
+              <button class="btn btn-secondary btn-sm"
+                      @click="hasDetection(block) && $dispatch('open-tune', { name: block.name })"
+                      :disabled="!hasDetection(block)">Tune</button>
               <button class="btn btn-secondary btn-sm"
                       @click="launchAnnotate(block.name)"
                       :disabled="editorBlock === block.name">Annotate</button>
@@ -365,6 +369,104 @@
     </div>
 
   </main>
+
+  <!-- Tune Panel (parameter tuning with before/after comparison) -->
+  <div class="tune-overlay" x-data="tunePanel" x-show="blockName !== null" x-cloak
+       @open-tune.window="loadBlockConfig($event.detail.name)">
+
+    <div class="tune-header">
+      <span style="font-weight: 600;">Tune Parameters</span>
+      <span class="name" x-text="blockName"></span>
+      <button class="btn btn-secondary btn-sm" style="margin-left: auto;" @click="resetToDefaults()">
+        Reset Defaults
+      </button>
+      <button class="btn btn-danger btn-sm" @click="blockName = null">Close</button>
+    </div>
+
+    <div class="tune-body">
+      <!-- Left: Parameter controls -->
+      <div class="tune-controls">
+        <template x-if="paramDefs" x-for="[key, def] in Object.entries(paramDefs || {})" :key="key">
+          <div class="tune-param" :class="{ 'tune-param-modified': isModified(key) }">
+            <label class="tune-label">
+              <span x-text="def.label"></span>
+              <span class="tune-stage" x-text="'S' + def.stage"></span>
+            </label>
+            <div class="tune-description" x-text="def.description"></div>
+
+            <!-- Dropdown for select type -->
+            <template x-if="def.type === 'select'">
+              <select x-model="params[key]" class="tune-select">
+                <template x-for="opt in def.options" :key="opt">
+                  <option :value="opt" x-text="opt"></option>
+                </template>
+              </select>
+            </template>
+
+            <!-- Slider for numeric type -->
+            <template x-if="def.type === 'slider'">
+              <div class="tune-slider-row">
+                <input type="range" :min="def.min" :max="def.max" :step="def.step"
+                       x-model.number="params[key]" class="tune-slider">
+                <span class="tune-value" x-text="params[key]"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <button class="btn btn-primary" style="width: 100%; margin-top: 12px;"
+                @click="runTuned()" :disabled="state === 'running'">
+          <span x-text="state === 'running' ? 'Running...' : 'Run with these params'"></span>
+        </button>
+
+        <div x-show="errorMsg" style="color: var(--danger); font-size: 12px; margin-top: 8px;"
+             x-text="errorMsg"></div>
+
+        <!-- Tuned result metrics -->
+        <div x-show="tunedResult" class="tune-metrics">
+          <div class="metric"><span class="metric-label">Rows</span><span x-text="tunedResult?.row_count"></span></div>
+          <div class="metric"><span class="metric-label">Confidence</span><span x-text="tunedResult?.overall_confidence"></span></div>
+          <div class="metric"><span class="metric-label">Spacing</span><span x-text="tunedResult?.mean_spacing_m + 'm'"></span></div>
+          <div class="metric"><span class="metric-label">Time</span><span x-text="tunedResult?.total_time_s + 's'"></span></div>
+        </div>
+
+        <button x-show="state === 'comparing'" class="btn btn-success" style="width: 100%; margin-top: 8px;"
+                @click="applyTuned()">
+          Apply as Default
+        </button>
+      </div>
+
+      <!-- Right: Before/After comparison -->
+      <div class="tune-comparison">
+        <template x-if="state === 'idle' || state === 'running'">
+          <div style="text-align: center;">
+            <h3 style="color: var(--text-muted); margin-bottom: 8px;">Current Detection</h3>
+            <img :src="defaultOverlayUrl()" alt="current" class="tune-image"
+                 @click="$store.lightbox.open(defaultOverlayUrl())">
+            <div x-show="state === 'running'" style="margin-top: 16px;">
+              <div class="spinner"></div>
+              <p style="color: var(--text-muted); margin-top: 8px; font-size: 12px;">Running tuned detection...</p>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="state === 'comparing'">
+          <div class="tune-side-by-side">
+            <div>
+              <h3 style="color: var(--text-muted); margin-bottom: 8px;">Before (Default)</h3>
+              <img :src="defaultOverlayUrl()" alt="before" class="tune-image"
+                   @click="$store.lightbox.open(defaultOverlayUrl())">
+            </div>
+            <div>
+              <h3 style="color: var(--accent); margin-bottom: 8px;">After (Tuned)</h3>
+              <img :src="tunedOverlayUrl()" alt="after" class="tune-image"
+                   @click="$store.lightbox.open(tunedOverlayUrl())">
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
 
   <!-- Lightbox overlay (zoom/pan image viewer) -->
   <div class="lightbox-overlay" x-show="$store.lightbox.visible" x-cloak>
