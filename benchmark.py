@@ -37,6 +37,7 @@ from vinerow.acquisition.tile_fetcher import (
     fetch_and_stitch,
 )
 from vinerow.config import PipelineConfig
+from vinerow.loaders.json_loader import load_test_blocks
 from vinerow.pipeline import run_pipeline
 
 load_dotenv()
@@ -101,14 +102,6 @@ def _category(block: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
-def load_test_blocks(path: str = "test_blocks.json") -> list[dict]:
-    resolved = Path(path)
-    if not resolved.exists():
-        logger.error("Test blocks file not found: %s", resolved)
-        return []
-    with open(resolved, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get("blocks", [])
 
 
 def run_block(block: dict, config: PipelineConfig) -> dict:

@@ -1,6 +1,5 @@
 """Shared test fixtures for vineyard row detection tests."""
 
-import json
 import sys
 from pathlib import Path
 
@@ -10,16 +9,16 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from vinerow.loaders.json_loader import load_test_blocks
+
 
 @pytest.fixture
 def test_blocks():
     """Load test blocks from test_blocks.json."""
-    path = PROJECT_ROOT / "test_blocks.json"
-    if not path.exists():
-        pytest.skip("test_blocks.json not found")
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get("blocks", [])
+    blocks = load_test_blocks(PROJECT_ROOT / "test_blocks.json")
+    if not blocks:
+        pytest.skip("test_blocks.json not found or empty")
+    return blocks
 
 
 @pytest.fixture

@@ -37,6 +37,7 @@ from vinerow.acquisition.tile_fetcher import (
     fetch_and_stitch,
 )
 from vinerow.config import PipelineConfig
+from vinerow.loaders.json_loader import load_test_blocks as _load_test_blocks
 from vinerow.pipeline import run_pipeline
 
 load_dotenv()
@@ -345,9 +346,6 @@ def _save_overlay(
     logger.info("Saved overlay: %s", out_path.name)
 
 
-def _load_test_blocks() -> list[dict]:
-    with open("test_blocks.json", "r", encoding="utf-8") as f:
-        return json.load(f).get("blocks", [])
 
 
 # ---------------------------------------------------------------------------

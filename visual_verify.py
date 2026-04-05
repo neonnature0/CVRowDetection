@@ -40,6 +40,7 @@ from vinerow.acquisition.tile_fetcher import (
     fetch_and_stitch,
 )
 from vinerow.config import PipelineConfig
+from vinerow.loaders.json_loader import load_test_blocks
 from vinerow.pipeline import run_pipeline
 from vinerow.types import BlockRowDetectionResult
 
@@ -417,11 +418,6 @@ def save_overview_panel(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-
-def load_test_blocks(path: str = "test_blocks.json") -> list[dict]:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f).get("blocks", [])
-
 
 def main():
     import argparse
