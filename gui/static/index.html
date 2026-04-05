@@ -213,25 +213,28 @@
   </main>
 
   <!-- Lightbox overlay (zoom/pan image viewer) -->
-  <div class="lightbox-overlay" x-show="$store.lightbox.visible" x-cloak
-       @wheel="lightboxWheel(event)"
-       @mousedown="lightboxMouseDown(event)"
-       @mousemove="lightboxMouseMove(event)"
-       @mouseup="lightboxMouseUp(event)"
-       @mouseleave="lightboxMouseUp(event)">
+  <div class="lightbox-overlay" x-show="$store.lightbox.visible" x-cloak>
     <div class="lightbox-toolbar">
       <button class="btn btn-secondary btn-sm" @click="$store.lightbox.zoom(300)">+</button>
       <button class="btn btn-secondary btn-sm" @click="$store.lightbox.zoom(-300)">&minus;</button>
-      <button class="btn btn-secondary btn-sm" @click="$store.lightbox.resetView()">Reset</button>
+      <button class="btn btn-secondary btn-sm" @click="$store.lightbox.resetView()">Fit</button>
       <span style="color: var(--text-muted); font-size: 11px; margin-left: 8px;"
             x-text="Math.round($store.lightbox.scale * 100) + '%'"></span>
       <button class="btn btn-danger btn-sm" style="margin-left: auto;" @click="$store.lightbox.close()">
         Close (Esc)
       </button>
     </div>
-    <div class="lightbox-content"
-         :style="'transform: translate(' + $store.lightbox.panX + 'px,' + $store.lightbox.panY + 'px) scale(' + $store.lightbox.scale + ')'">
-      <img :src="$store.lightbox.src" alt="Full-size image" draggable="false">
+    <div class="lightbox-canvas"
+         @wheel.prevent="lightboxWheel(event)"
+         @mousedown="lightboxMouseDown(event)"
+         @mousemove="lightboxMouseMove(event)"
+         @mouseup="lightboxMouseUp(event)"
+         @mouseleave="lightboxMouseUp(event)">
+      <div class="lightbox-content"
+           :style="'transform: translate(' + $store.lightbox.panX + 'px,' + $store.lightbox.panY + 'px) scale(' + $store.lightbox.scale + ')'">
+        <img :src="$store.lightbox.src" alt="Full-size image" draggable="false"
+             @load="$store.lightbox.fitToScreen($event.target)">
+      </div>
     </div>
   </div>
 

@@ -13,7 +13,6 @@ document.addEventListener('alpine:init', () => {
     state: 'idle',       // idle | loading | ready | editing | error
     errorMsg: '',
     detecting: false,
-    abortController: null,
     editorMtime: null,
     editorPollId: null,
 
@@ -27,19 +26,23 @@ document.addEventListener('alpine:init', () => {
     },
 
     async init() {
-      await this.loadQueue();
+      // Re-fetch blocks whenever this component initializes
+      await this.$store.app.refreshBlocks();
+      this.rebuildQueue();
+
+      // Also watch for view changes to refresh queue
+      this.$watch('$store.app.view', (view) => {
+        if (view === 'annotate') {
+          this.$store.app.refreshBlocks().then(() => this.rebuildQueue());
+        }
+      });
     },
 
-    async loadQueue() {
-      try {
-        // Get blocks with stage 'detected' (ready for annotation)
-        const blocks = this.$store.app.blocks;
-        this.queue = blocks.filter(b => b.stage === 'detected');
+    rebuildQueue() {
+      const blocks = this.$store.app.blocks;
+      this.queue = blocks.filter(b => b.stage === 'detected');
+      if (this.currentIdx >= this.queue.length) {
         this.currentIdx = 0;
-        this.state = this.queue.length > 0 ? 'idle' : 'idle';
-      } catch (e) {
-        this.state = 'error';
-        this.errorMsg = 'Failed to load queue';
       }
     },
 
@@ -49,30 +52,20 @@ document.addEventListener('alpine:init', () => {
 
       this.state = 'loading';
       this.detecting = true;
-      this.abortController = new AbortController();
 
       try {
-        // Run detection (this fetches tiles + runs pipeline, can take 30s+)
         await API.post('/api/detection/' + block.name + '/run');
         await this.$store.app.refreshBlocks();
         this.state = 'ready';
       } catch (e) {
-        if (e.name === 'AbortError') {
-          this.state = 'idle';
-        } else {
-          this.state = 'error';
-          this.errorMsg = 'Detection failed: ' + e.message;
-        }
+        this.state = 'error';
+        this.errorMsg = 'Detection failed: ' + e.message;
       } finally {
         this.detecting = false;
-        this.abortController = null;
       }
     },
 
     cancelDetection() {
-      if (this.abortController) {
-        this.abortController.abort();
-      }
       this.state = 'idle';
       this.detecting = false;
     },
@@ -82,29 +75,18 @@ document.addEventListener('alpine:init', () => {
     },
 
     async accept() {
-      // Save annotation as complete (uses detection result as-is)
       const name = this.current.name;
       try {
-        // Mark as annotated directly
-        await API.post('/api/blocks', null);  // dummy — we just update stage
-      } catch (_) { /* ignore */ }
-
-      // Update stage via the block registry
-      const blocks = this.$store.app.blocks;
-      const block = blocks.find(b => b.name === name);
-      if (block) {
-        // Post a simple annotation acceptance
-        try {
-          await API.post('/api/annotations/' + name, {
-            block_name: name,
-            status: 'complete',
-            source: 'auto-accepted',
-          });
-        } catch (_) { /* best effort */ }
-      }
+        await API.post('/api/annotations/' + name, {
+          block_name: name,
+          status: 'complete',
+          source: 'auto-accepted',
+        });
+      } catch (_) { /* best effort */ }
 
       await this.$store.app.refreshBlocks();
-      this.advance();
+      this.rebuildQueue();
+      this.state = 'idle';
     },
 
     async launchEditor() {
@@ -129,10 +111,11 @@ document.addEventListener('alpine:init', () => {
           if (res.status === 'saved') {
             this.stopEditorPoll();
             await this.$store.app.refreshBlocks();
-            this.advance();
+            this.rebuildQueue();
+            this.state = 'idle';
           } else if (res.status === 'skipped' || res.status === 'not_started') {
             this.stopEditorPoll();
-            this.state = 'ready';  // Back to ready, user can try again
+            this.state = 'ready';
           }
         } catch (e) {
           console.error('Editor poll error:', e);
@@ -148,17 +131,11 @@ document.addEventListener('alpine:init', () => {
     },
 
     skip() {
-      this.advance();
-    },
-
-    advance() {
-      this.state = 'idle';
-      // Reload queue to reflect stage changes
-      const blocks = this.$store.app.blocks;
-      this.queue = blocks.filter(b => b.stage === 'detected');
+      this.currentIdx++;
       if (this.currentIdx >= this.queue.length) {
         this.currentIdx = 0;
       }
+      this.state = 'idle';
     },
 
     retry() {

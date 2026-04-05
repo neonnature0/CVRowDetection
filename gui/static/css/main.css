@@ -139,13 +139,17 @@ main { flex: 1; position: relative; overflow: hidden; }
 .lightbox-toolbar {
   display: flex; align-items: center; gap: 6px; padding: 8px 12px;
   background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  z-index: 1001;
+}
+.lightbox-canvas {
+  flex: 1; position: relative; overflow: hidden;
 }
 .lightbox-content {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  overflow: hidden; transform-origin: center center;
+  position: absolute; top: 50%; left: 50%;
+  transform-origin: 0 0;
 }
 .lightbox-content img {
-  max-width: none; max-height: none; user-select: none; pointer-events: none;
+  display: block; user-select: none; pointer-events: none;
 }
 
 /* ── Placeholder views ── */

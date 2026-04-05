@@ -1,22 +1,24 @@
 /**
  * Lightbox — full-screen image viewer with zoom and pan.
  *
- * Usage: Alpine store 'lightbox'
- *   $store.lightbox.open('/api/detection/abc123/overlay')
- *   $store.lightbox.close()
+ * The image renders at its natural resolution. On open, it's scaled
+ * to fit the viewport. User can zoom with scroll wheel and pan by
+ * dragging. The transform uses translate + scale on an absolutely
+ * positioned element, so the image is never clipped by overflow.
  */
 
 document.addEventListener('alpine:init', () => {
   Alpine.store('lightbox', {
     visible: false,
     src: '',
-    // Transform state
     scale: 1,
     panX: 0,
     panY: 0,
     _dragging: false,
     _lastX: 0,
     _lastY: 0,
+    _imgW: 0,
+    _imgH: 0,
 
     open(src) {
       this.src = src;
@@ -31,38 +33,72 @@ document.addEventListener('alpine:init', () => {
       this.src = '';
     },
 
+    fitToScreen(img) {
+      // Called when the image loads — fit it to the canvas area
+      this._imgW = img.naturalWidth;
+      this._imgH = img.naturalHeight;
+      const canvas = document.querySelector('.lightbox-canvas');
+      if (!canvas) return;
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      // Scale to fit with some padding
+      this.scale = Math.min(cw / this._imgW, ch / this._imgH) * 0.95;
+      // Center: position absolute element at center of canvas, offset by half image size
+      this.panX = (cw / 2) - (this._imgW * this.scale / 2);
+      this.panY = (ch / 2) - (this._imgH * this.scale / 2);
+    },
+
     zoom(delta) {
-      const prev = this.scale;
-      this.scale = Math.max(0.2, Math.min(10, this.scale * (1 + delta * 0.001)));
+      const factor = 1 + delta * 0.001;
+      const newScale = Math.max(0.1, Math.min(20, this.scale * factor));
+      // Zoom toward center of canvas
+      const canvas = document.querySelector('.lightbox-canvas');
+      if (canvas) {
+        const cx = canvas.clientWidth / 2;
+        const cy = canvas.clientHeight / 2;
+        this.panX = cx - (cx - this.panX) * (newScale / this.scale);
+        this.panY = cy - (cy - this.panY) * (newScale / this.scale);
+      }
+      this.scale = newScale;
+    },
+
+    zoomAtPoint(delta, clientX, clientY) {
+      const factor = 1 + delta * 0.001;
+      const newScale = Math.max(0.1, Math.min(20, this.scale * factor));
+      const canvas = document.querySelector('.lightbox-canvas');
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = clientX - rect.left;
+        const my = clientY - rect.top;
+        // Zoom toward mouse position
+        this.panX = mx - (mx - this.panX) * (newScale / this.scale);
+        this.panY = my - (my - this.panY) * (newScale / this.scale);
+      }
+      this.scale = newScale;
     },
 
     resetView() {
-      this.scale = 1;
-      this.panX = 0;
-      this.panY = 0;
+      // Re-fit to screen
+      const img = document.querySelector('.lightbox-content img');
+      if (img && img.naturalWidth) this.fitToScreen(img);
     },
   });
 });
 
-// Wire up mouse events after DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  document.addEventListener('keydown', (e) => {
-    const lb = Alpine.store('lightbox');
-    if (!lb.visible) return;
-    if (e.key === 'Escape') lb.close();
-    if (e.key === '0') lb.resetView();
-    if (e.key === '+' || e.key === '=') lb.zoom(200);
-    if (e.key === '-') lb.zoom(-200);
-  });
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (typeof Alpine === 'undefined') return;
+  const lb = Alpine.store('lightbox');
+  if (!lb || !lb.visible) return;
+  if (e.key === 'Escape') lb.close();
+  if (e.key === '0') lb.resetView();
+  if (e.key === '+' || e.key === '=') lb.zoom(300);
+  if (e.key === '-') lb.zoom(-300);
 });
 
-/**
- * Alpine directive-style event handlers for the lightbox container.
- * Called from inline event attributes in the HTML.
- */
+// Mouse handlers (called from HTML event attributes)
 function lightboxWheel(e) {
-  e.preventDefault();
-  Alpine.store('lightbox').zoom(-e.deltaY);
+  Alpine.store('lightbox').zoomAtPoint(-e.deltaY, e.clientX, e.clientY);
 }
 
 function lightboxMouseDown(e) {
