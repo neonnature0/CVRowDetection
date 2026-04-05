@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+from datetime import datetime, timezone
 from pathlib import Path
+
+import cv2
 
 from fastapi import APIRouter, HTTPException
 
-from gui.config import ANNOTATIONS_DIR
-from gui.services import block_registry, task_runner
+from gui.config import ANNOTATIONS_DIR, IMAGES_DIR, DETECTIONS_DIR
+from gui.services import block_registry, detection_cache, task_runner
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -18,6 +20,94 @@ router = APIRouter()
 
 def _annotation_path(name: str) -> Path:
     return ANNOTATIONS_DIR / f"{name}.json"
+
+
+def _ensure_annotation(name: str):
+    """Create the annotation JSON + image files if they don't exist yet.
+
+    Uses the cached detection result to build the annotation file in the
+    format that annotate.py expects. Also copies the aerial image + mask
+    into dataset/images/ since annotate.py reads from there.
+    """
+    ann_path = _annotation_path(name)
+    if ann_path.exists():
+        return  # already prepared
+
+    # Need cached detection result
+    cached = detection_cache.load_cached_result(name)
+    if cached is None:
+        raise HTTPException(400, "Run detection first before annotating")
+
+    # Need the aerial image and mask (these were saved by detection_cache)
+    src_image = DETECTIONS_DIR / f"{name}_image.png"
+    if not src_image.exists():
+        raise HTTPException(400, "Aerial image not cached. Re-run detection.")
+
+    # Copy image + generate mask into dataset/images/
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    dst_image = IMAGES_DIR / f"{name}.png"
+    dst_mask = IMAGES_DIR / f"{name}_mask.png"
+
+    if not dst_image.exists():
+        img = cv2.imread(str(src_image))
+        if img is not None:
+            cv2.imwrite(str(dst_image), img)
+            # Generate mask from the block boundary
+            # For now, re-read from the detection image (it's masked already)
+            # The mask is the non-black region
+            import numpy as np
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            mask = (gray > 0).astype(np.uint8) * 255
+            cv2.imwrite(str(dst_mask), mask)
+
+    h, w = 0, 0
+    img_check = cv2.imread(str(dst_image))
+    if img_check is not None:
+        h, w = img_check.shape[:2]
+
+    # Build annotation JSON from cached detection rows
+    rows_data = []
+    for i, row in enumerate(cached.get("rows", [])):
+        rows_data.append({
+            "id": i,
+            "centerline_px": row.get("centerline_px", []),
+            "confidence": row.get("confidence", 0.0),
+            "origin": "pipeline",
+            "modified": False,
+        })
+
+    block = block_registry.get_block(name) or {}
+    annotation = {
+        "block_name": name,
+        "vineyard_name": block.get("vineyard_name", ""),
+        "image_file": f"images/{name}.png",
+        "mask_file": f"images/{name}_mask.png",
+        "image_size": [w, h],
+        "meters_per_pixel": 0.0,  # Will be approximate; annotate.py doesn't need exact
+        "angle_deg": cached.get("dominant_angle_deg", 0.0),
+        "angle_source": "fft2d",
+        "angle_modified": False,
+        "rows": rows_data,
+        "metadata": {
+            "status": "pending",
+            "annotator": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "modified_at": None,
+            "annotation_time_seconds": None,
+            "notes": "",
+        },
+        "ground_truth": {
+            "gt_spacing_m": block.get("row_spacing_m"),
+            "gt_row_count": block.get("row_count"),
+            "gt_row_angle_bearing": block.get("row_angle"),
+        },
+    }
+
+    with open(ann_path, "w", encoding="utf-8") as f:
+        json.dump(annotation, f, indent=2)
+    logger.info("Created annotation file for %s (%d rows)", name, len(rows_data))
 
 
 @router.get("/queue")
@@ -46,7 +136,6 @@ def save_annotation(name: str, data: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    # Update stage
     block_registry.update_block(name, {"stage": "annotated"})
     logger.info("Saved annotation for %s", name)
     return {"status": "saved"}
@@ -56,14 +145,17 @@ def save_annotation(name: str, data: dict):
 def launch_editor(name: str):
     """Spawn annotate.py as a subprocess for this block.
 
-    The matplotlib window opens in its own OS window.
+    Creates the annotation file first if it doesn't exist, using cached
+    detection results. The matplotlib window opens in its own OS window.
     Poll /editor-status to check when it exits.
     """
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
 
-    # Record annotation mtime before launching
+    # Ensure annotation file + images exist
+    _ensure_annotation(name)
+
     path = _annotation_path(name)
     mtime_before = path.stat().st_mtime if path.exists() else None
 
@@ -78,12 +170,10 @@ def launch_editor(name: str):
 def editor_status(name: str, mtime_before: float | None = None):
     """Poll whether the annotate.py subprocess has exited.
 
-    Pass mtime_before (from launch-editor response) to detect if the file was saved.
-
     Returns:
       - {"status": "running"} — still open
       - {"status": "saved"} — exited and annotation file was modified
-      - {"status": "skipped"} — exited without saving (or file unchanged)
+      - {"status": "skipped"} — exited without saving
       - {"status": "not_started"} — no editor was launched
     """
     status = task_runner.check_editor_status(name)
@@ -101,7 +191,6 @@ def editor_status(name: str, mtime_before: float | None = None):
 
     mtime_after = path.stat().st_mtime
     if mtime_before is not None and mtime_after > mtime_before:
-        # File was modified — mark as annotated
         block_registry.update_block(name, {"stage": "annotated"})
         return {"status": "saved"}
 
