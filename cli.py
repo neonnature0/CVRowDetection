@@ -29,6 +29,7 @@ from vinerow.acquisition.tile_fetcher import (
     fetch_and_stitch,
 )
 from vinerow.config import PipelineConfig
+from vinerow.loaders.json_loader import load_test_blocks
 from vinerow.pipeline import run_pipeline
 
 load_dotenv()
@@ -65,19 +66,6 @@ def angular_distance(a: float, b: float) -> float:
 # ---------------------------------------------------------------------------
 # Block loading
 # ---------------------------------------------------------------------------
-
-
-def load_test_blocks(path: str = "test_blocks.json") -> list[dict]:
-    """Load test block data from JSON file."""
-    resolved = Path(path)
-    if not resolved.exists():
-        logger.error("Test blocks file not found: %s", resolved)
-        return []
-    with open(resolved, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    blocks = data.get("blocks", [])
-    logger.info("Loaded %d test blocks from %s", len(blocks), resolved)
-    return blocks
 
 
 def load_geojson_block(path: str) -> dict:
