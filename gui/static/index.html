@@ -469,9 +469,21 @@
         <template x-if="state === 'comparing'">
           <div class="tune-side-by-side">
             <div>
-              <h3 style="color: var(--text-muted); margin-bottom: 8px;">Before (Default)</h3>
-              <img :src="defaultOverlayUrl()" alt="before" class="tune-image"
-                   @click="$store.lightbox.open(defaultOverlayUrl())">
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                <h3 style="color: var(--text-muted);">Before (Default)</h3>
+                <label style="font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                  <input type="checkbox" x-model="showDiff"
+                         style="accent-color: #ff00ff; width: 14px; height: 14px;">
+                  Show Diff
+                </label>
+              </div>
+              <div style="position: relative; display: inline-block;">
+                <img :src="defaultOverlayUrl()" alt="before" class="tune-image"
+                     @click="$store.lightbox.open(defaultOverlayUrl())">
+                <img x-show="showDiff"
+                     :src="'/api/detection/' + blockName + '/tuned-lines?t=' + Date.now()"
+                     alt="diff" class="tune-diff-layer">
+              </div>
             </div>
             <div>
               <h3 style="color: var(--accent); margin-bottom: 8px;">After (Tuned)</h3>

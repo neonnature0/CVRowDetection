@@ -198,6 +198,38 @@ def generate_overlay(
     )
 
 
+def generate_lines_only_overlay(
+    result,
+    image_shape: tuple[int, int],
+    mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """Create a transparent RGBA image with only row lines drawn (no aerial background).
+
+    Uses magenta (255, 0, 255) with full alpha on line pixels, zero alpha elsewhere.
+    Line thickness is 1px (thinner than the default overlay's 2px) so when overlaid
+    on the default, the green default lines show through underneath.
+    """
+    h, w = image_shape[:2]
+    canvas = np.zeros((h, w, 4), dtype=np.uint8)  # RGBA, fully transparent
+
+    for row in result.rows:
+        # Use ensemble_confidence if available, otherwise regular confidence
+        conf = getattr(row, 'ensemble_confidence', None) or row.confidence
+
+        # Magenta with varying alpha based on confidence
+        alpha = max(128, int(conf * 255))
+        color_rgba = (255, 0, 255, alpha)
+
+        pts = row.centerline_px
+        for i in range(len(pts) - 1):
+            x1, y1 = int(round(pts[i][0])), int(round(pts[i][1]))
+            x2, y2 = int(round(pts[i + 1][0])), int(round(pts[i + 1][1]))
+            # Draw on BGR channels + alpha separately
+            cv2.line(canvas, (x1, y1), (x2, y2), color_rgba, 1, cv2.LINE_AA)
+
+    return canvas
+
+
 def generate_thumbnail(image_bgr: np.ndarray, max_size: int = 256) -> np.ndarray:
     """Downscale an image to thumbnail size."""
     h, w = image_bgr.shape[:2]

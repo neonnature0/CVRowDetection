@@ -167,6 +167,10 @@ main { flex: 1; position: relative; overflow: hidden; }
 
 .tune-side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .tune-side-by-side h3 { font-size: 13px; }
+.tune-diff-layer {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  pointer-events: none; mix-blend-mode: screen;
+}
 
 /* ── Lightbox (full-screen zoom/pan viewer) ── */
 [x-cloak] { display: none !important; }

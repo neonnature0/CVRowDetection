@@ -14,6 +14,7 @@ document.addEventListener('alpine:init', () => {
     state: 'idle',      // idle | running | comparing
     tunedResult: null,  // metrics from tuned run
     errorMsg: '',
+    showDiff: false,    // onion-skin diff toggle
 
     get paramList() {
       // Convert paramDefs object to array for x-for iteration

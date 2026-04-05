@@ -15,7 +15,9 @@ from pydantic import BaseModel
 
 from gui.config import DETECTIONS_DIR
 from gui.services import block_registry, detection_cache
-from gui.services.detection_runner import detect_block, generate_overlay, generate_thumbnail
+from gui.services.detection_runner import (
+    detect_block, generate_overlay, generate_lines_only_overlay, generate_thumbnail,
+)
 from vinerow.config import PipelineConfig
 
 logger = logging.getLogger(__name__)
@@ -166,11 +168,16 @@ async def run_tuned_detection(name: str, req: TuneRequest):
 
     overlay = generate_overlay(image_bgr, mask, result, mpp, block_name=name)
 
-    # Save tuned overlay separately (don't overwrite default)
+    # Save tuned overlay and lines-only diff separately (don't overwrite default)
     import cv2
     DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
     tuned_overlay_path = DETECTIONS_DIR / f"{name}_tuned_overlay.png"
     cv2.imwrite(str(tuned_overlay_path), overlay)
+
+    # Lines-only transparent PNG for onion-skin diff
+    lines_only = generate_lines_only_overlay(result, image_bgr.shape)
+    tuned_lines_path = DETECTIONS_DIR / f"{name}_tuned_lines.png"
+    cv2.imwrite(str(tuned_lines_path), lines_only)
 
     # Save tuned params for reference
     tuned_config_path = DETECTIONS_DIR / f"{name}_tuned_config.json"
@@ -219,6 +226,15 @@ def get_tuned_overlay(name: str):
     path = DETECTIONS_DIR / f"{name}_tuned_overlay.png"
     if not path.exists():
         raise HTTPException(404, "No tuned overlay. Run /tune first.")
+    return FileResponse(path, media_type="image/png")
+
+
+@router.get("/{name}/tuned-lines")
+def get_tuned_lines(name: str):
+    """Serve the tuned lines-only transparent PNG (for onion-skin diff)."""
+    path = DETECTIONS_DIR / f"{name}_tuned_lines.png"
+    if not path.exists():
+        raise HTTPException(404, "No tuned lines image. Run /tune first.")
     return FileResponse(path, media_type="image/png")
 
 
