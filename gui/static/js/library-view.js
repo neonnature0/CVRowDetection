@@ -62,6 +62,20 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    async launchBlindAnnotate(name) {
+      // Create blank annotation (0 rows) then open editor.
+      // Important: this should be used BEFORE viewing the overlay for this block.
+      try {
+        await API.post('/api/annotations/' + name + '/prepare-blind');
+        const res = await API.post('/api/annotations/' + name + '/launch-editor');
+        this.editorBlock = name;
+        this.editorMtime = res.mtime_before;
+        this.startEditorPoll(name);
+      } catch (e) {
+        alert('Failed to launch blind editor: ' + e.message);
+      }
+    },
+
     startEditorPoll(name) {
       this.stopEditorPoll();
       this.editorPollId = setInterval(async () => {

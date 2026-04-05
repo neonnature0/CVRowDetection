@@ -119,8 +119,6 @@
                 <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: center;">
                   <button class="btn btn-success" @click="accept()">Accept</button>
                   <button class="btn btn-primary" @click="launchEditor()">Edit</button>
-                  <button class="btn btn-warning" @click="launchBlindEditor()"
-                          title="Draw rows from scratch without seeing pipeline output (unbiased ground truth)">Blind</button>
                   <button class="btn btn-secondary" @click="skip()">Skip</button>
                 </div>
               </div>
@@ -200,6 +198,10 @@
               <button class="btn btn-secondary btn-sm"
                       @click="launchAnnotate(block.name)"
                       :disabled="editorBlock === block.name">Annotate</button>
+              <button class="btn btn-warning btn-sm"
+                      @click="launchBlindAnnotate(block.name)"
+                      :disabled="!hasDetection(block) || editorBlock === block.name"
+                      title="Draw rows from scratch without seeing detection output (unbiased GT)">Blind</button>
               <button class="btn btn-danger btn-sm" @click="deleteBlock(block.name)">Del</button>
             </div>
 

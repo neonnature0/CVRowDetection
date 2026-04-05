@@ -78,14 +78,29 @@ def _ensure_annotation(name: str):
             "modified": False,
         })
 
+    # Compute meters_per_pixel from block centroid + zoom
     block = block_registry.get_block(name) or {}
+    mpp = 0.0
+    try:
+        from vinerow.acquisition.geo_utils import meters_per_pixel, polygon_bbox
+        from vinerow.acquisition.tile_fetcher import auto_select_source, default_zoom, TILE_SOURCES
+        coords = block["boundary"]["coordinates"][0]
+        bbox = polygon_bbox(coords)
+        lat = (bbox[1] + bbox[3]) / 2.0
+        lng = (bbox[0] + bbox[2]) / 2.0
+        source_name = auto_select_source(lng)
+        zoom = default_zoom(source_name)
+        mpp = meters_per_pixel(lat, zoom, TILE_SOURCES[source_name].tile_size)
+    except Exception:
+        pass
+
     annotation = {
         "block_name": name,
         "vineyard_name": block.get("vineyard_name", ""),
         "image_file": f"images/{name}.png",
         "mask_file": f"images/{name}_mask.png",
         "image_size": [w, h],
-        "meters_per_pixel": 0.0,  # Will be approximate; annotate.py doesn't need exact
+        "meters_per_pixel": round(mpp, 6),
         "angle_deg": cached.get("dominant_angle_deg", 0.0),
         "angle_source": "fft2d",
         "angle_modified": False,
@@ -181,6 +196,27 @@ def prepare_blind_annotation(name: str):
     if img_check is not None:
         h, w = img_check.shape[:2]
 
+    # Pull angle and mpp from the cached detection result — needed for
+    # evaluate_gt.py to correctly project rows onto the perpendicular axis.
+    # Without angle_deg, evaluation matches y-coords against x-coords = 0% F1.
+    cached = detection_cache.load_cached_result(name)
+    detected_angle = cached.get("dominant_angle_deg", 0.0) if cached else 0.0
+
+    # Compute meters_per_pixel from block centroid + zoom
+    mpp = 0.0
+    try:
+        from vinerow.acquisition.geo_utils import meters_per_pixel, polygon_bbox
+        from vinerow.acquisition.tile_fetcher import auto_select_source, default_zoom, TILE_SOURCES
+        coords = block["boundary"]["coordinates"][0]
+        bbox = polygon_bbox(coords)
+        lat = (bbox[1] + bbox[3]) / 2.0
+        lng = (bbox[0] + bbox[2]) / 2.0
+        source_name = auto_select_source(lng)
+        zoom = default_zoom(source_name)
+        mpp = meters_per_pixel(lat, zoom, TILE_SOURCES[source_name].tile_size)
+    except Exception as e:
+        logger.warning("Could not compute mpp for blind annotation: %s", e)
+
     # Create annotation with ZERO rows (blind)
     annotation = {
         "block_name": name,
@@ -188,9 +224,9 @@ def prepare_blind_annotation(name: str):
         "image_file": f"images/{name}.png",
         "mask_file": f"images/{name}_mask.png",
         "image_size": [w, h],
-        "meters_per_pixel": 0.0,
-        "angle_deg": 0.0,
-        "angle_source": "none",
+        "meters_per_pixel": round(mpp, 6),
+        "angle_deg": round(detected_angle, 2),
+        "angle_source": "fft2d",
         "angle_modified": False,
         "rows": [],  # Empty — user draws from scratch
         "metadata": {
