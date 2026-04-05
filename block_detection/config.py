@@ -44,5 +44,5 @@ class DetectionConfig:
 
     # --- Paths ---
     tile_cache_dir: str = "output/.tile_cache"
-    checkpoint_dir: str = "detection/checkpoints"
+    checkpoint_dir: str = "block_detection/checkpoints"
     data_dir: str = "dataset/block_training"

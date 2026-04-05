@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
 
-from detection.config import DetectionConfig
+from block_detection.config import DetectionConfig
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ Follows the same patch-and-stitch approach as training/predict.py, adapted
 for 2-channel output (interior + boundary) and polygon extraction.
 
 Usage:
-    python -m detection.predict_blocks --image property.png --encoder checkpoints/encoder.pth --head checkpoints/block_head.pth
+    python -m block_detection.predict_blocks --image property.png --encoder checkpoints/encoder.pth --head checkpoints/block_head.pth
 """
 
 from __future__ import annotations
@@ -23,15 +23,15 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from vinerow.acquisition.geo_utils import pixel_to_lnglat
 
-from detection.config import DetectionConfig
-from detection.encoder import SharedEncoder, load_encoder
-from detection.heads.block_head import (
+from block_detection.config import DetectionConfig
+from block_detection.encoder import SharedEncoder, load_encoder
+from block_detection.heads.block_head import (
     BlockDetectionHead,
     BlockDetector,
     load_head,
     masks_to_polygons,
 )
-from detection.types import BlockDetection, BlockDetectionResult
+from block_detection.types import BlockDetection, BlockDetectionResult
 
 logger = logging.getLogger(__name__)
 
@@ -219,8 +219,8 @@ def save_predictions_geojson(result: BlockDetectionResult, path: Path) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Block detection inference")
     parser.add_argument("--image", type=str, required=True, help="Property image (BGR PNG)")
-    parser.add_argument("--encoder", type=str, default="detection/checkpoints/encoder.pth")
-    parser.add_argument("--head", type=str, default="detection/checkpoints/block_head.pth")
+    parser.add_argument("--encoder", type=str, default="block_detection/checkpoints/encoder.pth")
+    parser.add_argument("--head", type=str, default="block_detection/checkpoints/block_head.pth")
     parser.add_argument("--output", type=str, default=None, help="Output GeoJSON path")
     parser.add_argument("--save-masks", action="store_true", help="Save probability masks as images")
     parser.add_argument("--patch-size", type=int, default=512)
