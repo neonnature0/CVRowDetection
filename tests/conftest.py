@@ -15,7 +15,7 @@ from vinerow.loaders.json_loader import load_test_blocks
 @pytest.fixture
 def test_blocks():
     """Load test blocks from test_blocks.json."""
-    blocks = load_test_blocks(PROJECT_ROOT / "test_blocks.json")
+    blocks = load_test_blocks(PROJECT_ROOT / "data" / "blocks" / "test_blocks.json")
     if not blocks:
         pytest.skip("test_blocks.json not found or empty")
     return blocks

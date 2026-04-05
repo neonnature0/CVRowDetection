@@ -275,7 +275,7 @@ def main():
         all_blocks = load_test_blocks()
         blocks = [b for b in all_blocks if b["name"] == args.block]
         if not blocks:
-            logger.error("Block '%s' not found in test_blocks.json", args.block)
+            logger.error("Block '%s' not found in data/blocks/test_blocks.json", args.block)
             sys.exit(1)
     else:
         blocks = load_test_blocks()
