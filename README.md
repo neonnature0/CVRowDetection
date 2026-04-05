@@ -117,14 +117,13 @@ source venv/bin/activate
 ### 2. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install .
 ```
 
 For ML training/inference (optional):
 
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install segmentation-models-pytorch albumentations
+pip install ".[ml]"
 ```
 
 ### 3. Configure environment
