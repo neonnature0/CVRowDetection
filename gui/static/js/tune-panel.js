@@ -15,8 +15,13 @@ document.addEventListener('alpine:init', () => {
     tunedResult: null,  // metrics from tuned run
     errorMsg: '',
 
+    get paramList() {
+      // Convert paramDefs object to array for x-for iteration
+      if (!this.paramDefs) return [];
+      return Object.entries(this.paramDefs).map(([key, def]) => ({ key, ...def }));
+    },
+
     async init() {
-      // Fetch parameter definitions once
       try {
         this.paramDefs = await API.get('/api/detection/tunable-params');
         this.resetToDefaults();

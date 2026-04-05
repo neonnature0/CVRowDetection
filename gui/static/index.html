@@ -390,29 +390,29 @@
     <div class="tune-body">
       <!-- Left: Parameter controls -->
       <div class="tune-controls">
-        <template x-if="paramDefs" x-for="[key, def] in Object.entries(paramDefs || {})" :key="key">
-          <div class="tune-param" :class="{ 'tune-param-modified': isModified(key) }">
+        <template x-for="p in paramList" :key="p.key">
+          <div class="tune-param" :class="{ 'tune-param-modified': isModified(p.key) }">
             <label class="tune-label">
-              <span x-text="def.label"></span>
-              <span class="tune-stage" x-text="'S' + def.stage"></span>
+              <span x-text="p.label"></span>
+              <span class="tune-stage" x-text="'S' + p.stage"></span>
             </label>
-            <div class="tune-description" x-text="def.description"></div>
+            <div class="tune-description" x-text="p.description"></div>
 
             <!-- Dropdown for select type -->
-            <template x-if="def.type === 'select'">
-              <select x-model="params[key]" class="tune-select">
-                <template x-for="opt in def.options" :key="opt">
+            <template x-if="p.type === 'select'">
+              <select x-model="params[p.key]" class="tune-select">
+                <template x-for="opt in p.options" :key="opt">
                   <option :value="opt" x-text="opt"></option>
                 </template>
               </select>
             </template>
 
             <!-- Slider for numeric type -->
-            <template x-if="def.type === 'slider'">
+            <template x-if="p.type === 'slider'">
               <div class="tune-slider-row">
-                <input type="range" :min="def.min" :max="def.max" :step="def.step"
-                       x-model.number="params[key]" class="tune-slider">
-                <span class="tune-value" x-text="params[key]"></span>
+                <input type="range" :min="p.min" :max="p.max" :step="p.step"
+                       x-model.number="params[p.key]" class="tune-slider">
+                <span class="tune-value" x-text="params[p.key]"></span>
               </div>
             </template>
           </div>

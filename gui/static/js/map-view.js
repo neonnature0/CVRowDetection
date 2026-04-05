@@ -70,21 +70,25 @@ function initMap() {
   document.getElementById('save-block-btn').addEventListener('click', saveDrawnBlock);
 }
 
-function updateSaveButton() {
-  if (!_drawControl) return;
+function _getDrawnFeatures() {
+  // getFeatures(false) returns a GeoJSON FeatureCollection (false = all, not just selected)
+  if (!_drawControl) return [];
   try {
-    const features = _drawControl.getFeatures();
-    const hasPolygon = features && features.some(f => f.geometry && f.geometry.type === 'Polygon');
-    document.getElementById('save-block-btn').disabled = !hasPolygon;
+    const fc = _drawControl.getFeatures(false);
+    return (fc && fc.features) ? fc.features : [];
   } catch (e) {
-    // Draw control may not be ready yet
+    return [];
   }
 }
 
-async function saveDrawnBlock() {
-  if (!_drawControl) return;
+function updateSaveButton() {
+  const features = _getDrawnFeatures();
+  const hasPolygon = features.some(f => f.geometry && f.geometry.type === 'Polygon');
+  document.getElementById('save-block-btn').disabled = !hasPolygon;
+}
 
-  const features = _drawControl.getFeatures();
+async function saveDrawnBlock() {
+  const features = _getDrawnFeatures();
   const polygon = features.find(f => f.geometry && f.geometry.type === 'Polygon');
   if (!polygon) return;
 
@@ -94,11 +98,8 @@ async function saveDrawnBlock() {
 
   try {
     await API.post('/api/blocks', { boundary: polygon.geometry });
-    // Clear drawn features
-    const ids = features.map(f => f.id).filter(Boolean);
-    ids.forEach(id => {
-      try { _drawControl.removeFeatures([id]); } catch (_) {}
-    });
+    // Clear all drawn features via the TerraDraw instance
+    try { _drawControl.terradraw.clear(); } catch (_) {}
     await Alpine.store('app').refreshBlocks();
     refreshBlockOverlays();
     renderSidebarList();
