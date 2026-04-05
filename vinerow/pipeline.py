@@ -198,7 +198,7 @@ def run_pipeline(
     from vinerow.tracking.stitching import stitch_trajectories
     n_strips = len(strip_centers)
     trajectories, occlusion_gaps = stitch_trajectories(
-        trajectories, n_strips, coarse.spacing_px, config,
+        trajectories, n_strips, coarse.spacing_px, config, mask=mask,
     )
     stitch_time = time.perf_counter() - t0
     timings.tracking += stitch_time  # fold into tracking time

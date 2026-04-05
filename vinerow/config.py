@@ -64,6 +64,8 @@ class PipelineConfig:
     min_group_occlusion_rows: int = 3       # min adjacent rows missing to flag group occlusion
     stitch_ambiguity_ratio: float = 1.5     # best match must be this much better than 2nd best
     stitch_max_join_angle_deg: float = 15.0 # max direction change at stitch join point
+    stitch_mask_check_enabled: bool = True  # reject stitches that bridge outside the block mask
+    stitch_max_mask_miss_fraction: float = 0.2  # max fraction of bridging samples outside mask
 
     # --- Fitting (Stage 6) ---
     curvature_soft_limit: float = 10.0  # deg/m — curvature above this penalizes confidence

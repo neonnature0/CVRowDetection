@@ -27,6 +27,61 @@ from vinerow.types import OcclusionGap, RowCandidate, RowSegment, RowTrajectory
 logger = logging.getLogger(__name__)
 
 
+def _stitch_crosses_mask(
+    traj_a: RowTrajectory,
+    traj_b: RowTrajectory,
+    mask: np.ndarray | None,
+    max_miss_fraction: float = 0.2,
+    sample_step: float = 5.0,
+) -> bool:
+    """Check if a proposed stitch bridges through outside-mask territory.
+
+    Samples points along the line connecting the last matched candidate of
+    traj_a to the first matched candidate of traj_b at `sample_step` pixel
+    intervals. Returns True if more than `max_miss_fraction` of samples
+    fall outside the mask (i.e., the stitch should be REJECTED).
+    """
+    if mask is None:
+        return False  # no mask → don't reject
+
+    # Find endpoint candidates
+    end_a = None
+    for c in reversed(traj_a.candidates):
+        if c is not None:
+            end_a = c
+            break
+    start_b = None
+    for c in traj_b.candidates:
+        if c is not None:
+            start_b = c
+            break
+
+    if end_a is None or start_b is None:
+        return False
+
+    h, w = mask.shape[:2]
+    dx = start_b.x - end_a.x
+    dy = start_b.y - end_a.y
+    dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1:
+        return False
+
+    n_samples = max(2, int(dist / sample_step))
+    n_miss = 0
+    for i in range(n_samples + 1):
+        t = i / n_samples
+        px = int(round(end_a.x + t * dx))
+        py = int(round(end_a.y + t * dy))
+        if 0 <= px < w and 0 <= py < h:
+            if mask[py, px] == 0:
+                n_miss += 1
+        else:
+            n_miss += 1  # outside image bounds = outside mask
+
+    miss_frac = n_miss / (n_samples + 1)
+    return miss_frac > max_miss_fraction
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -523,6 +578,7 @@ def stitch_trajectories(
     n_strips: int,
     spacing_px: float,
     config: PipelineConfig,
+    mask: np.ndarray | None = None,
 ) -> tuple[list[RowTrajectory], list[OcclusionGap]]:
     """Post-tracking stitching pass.
 
@@ -620,6 +676,14 @@ def stitch_trajectories(
                     logger.debug(
                         "Rejected pairwise stitch join angle: traj %d→%d (angle=%.1f deg)",
                         i, best_j, angle,
+                    )
+                elif config.stitch_mask_check_enabled and _stitch_crosses_mask(
+                    trajectories[i], trajectories[best_j], mask,
+                    config.stitch_max_mask_miss_fraction,
+                ):
+                    logger.debug(
+                        "Rejected pairwise stitch through masked area: traj %d→%d",
+                        i, best_j,
                     )
                 else:
                     all_merges.append((i, best_j))
