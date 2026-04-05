@@ -72,6 +72,116 @@ def detect_block(block: dict, config: PipelineConfig | None = None):
     return image_bgr, mask, result, mpp
 
 
+def compute_ensemble_confidence(
+    block: dict,
+    primary_result,
+    primary_config: PipelineConfig,
+    image_bgr: np.ndarray,
+    mask: np.ndarray,
+    mpp: float,
+):
+    """Run a shadow detection with the alternative ridge mode and score agreement.
+
+    For each primary row, assigns ensemble_confidence based on whether a
+    matching row exists in the shadow detection:
+      - Close match (< 0.2 × spacing): 1.0
+      - Weak match (0.2-0.4 × spacing): 0.6
+      - No match: 0.2
+    """
+    import math
+    from scipy.optimize import linear_sum_assignment
+
+    # Determine shadow mode
+    primary_mode = primary_config.ridge_mode
+    shadow_mode = "gabor" if primary_mode in ("ml", "ml_ensemble") else "ml"
+
+    shadow_config = PipelineConfig(
+        ridge_mode=shadow_mode,
+        save_debug_artifacts=False,
+    )
+
+    # Get tile info from primary config
+    from vinerow.acquisition.geo_utils import polygon_bbox
+    from vinerow.acquisition.tile_fetcher import auto_select_source, default_zoom, TILE_SOURCES
+
+    coords = block["boundary"]["coordinates"][0]
+    bbox = polygon_bbox(coords)
+    lat = (bbox[1] + bbox[3]) / 2.0
+    lng = (bbox[0] + bbox[2]) / 2.0
+    source_name = auto_select_source(lng)
+    zoom = default_zoom(source_name)
+
+    logger.info("Running shadow detection (mode=%s) for ensemble confidence", shadow_mode)
+    shadow_result = run_pipeline(
+        image_bgr=image_bgr,
+        mask=mask,
+        mpp=mpp,
+        lat=lat,
+        zoom=zoom,
+        tile_size=TILE_SOURCES[source_name].tile_size,
+        tile_origin=(0, 0),
+        tile_source=source_name,
+        config=shadow_config,
+        block_name=block.get("name", "shadow"),
+    )
+
+    if shadow_result is None or not shadow_result.rows:
+        logger.warning("Shadow detection failed or found no rows")
+        for row in primary_result.rows:
+            row.ensemble_confidence = 0.2
+        return
+
+    # Compute perpendicular positions for matching
+    h, w = mask.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    angle_rad = math.radians(primary_result.dominant_angle_deg)
+    pdx, pdy = -math.sin(angle_rad), math.cos(angle_rad)
+
+    primary_perps = []
+    for row in primary_result.rows:
+        perps = [(x - cx) * pdx + (y - cy) * pdy for x, y in row.centerline_px]
+        primary_perps.append(float(np.mean(perps)))
+
+    shadow_perps = []
+    for row in shadow_result.rows:
+        perps = [(x - cx) * pdx + (y - cy) * pdy for x, y in row.centerline_px]
+        shadow_perps.append(float(np.mean(perps)))
+
+    spacing_px = primary_result.mean_spacing_m / max(mpp, 1e-6)
+
+    # Hungarian matching
+    n_pri = len(primary_perps)
+    n_sha = len(shadow_perps)
+    cost = np.zeros((n_pri, n_sha), dtype=np.float64)
+    for i in range(n_pri):
+        for j in range(n_sha):
+            cost[i, j] = abs(primary_perps[i] - shadow_perps[j])
+
+    threshold_close = 0.2 * spacing_px
+    threshold_match = 0.4 * spacing_px
+
+    pri_idx, sha_idx = linear_sum_assignment(cost)
+
+    matched = {}
+    for pi, si in zip(pri_idx, sha_idx):
+        dist = cost[pi, si]
+        if dist <= threshold_close:
+            matched[pi] = 1.0
+        elif dist <= threshold_match:
+            matched[pi] = 0.6
+
+    for i, row in enumerate(primary_result.rows):
+        row.ensemble_confidence = matched.get(i, 0.2)
+
+    n_high = sum(1 for v in matched.values() if v == 1.0)
+    n_weak = sum(1 for v in matched.values() if v == 0.6)
+    n_none = n_pri - len(matched)
+    logger.info(
+        "Ensemble confidence: %d high, %d weak, %d unmatched (of %d rows)",
+        n_high, n_weak, n_none, n_pri,
+    )
+
+
 def generate_overlay(
     image_bgr: np.ndarray,
     mask: np.ndarray,

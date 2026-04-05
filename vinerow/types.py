@@ -170,6 +170,7 @@ class FittedRow:
     local_spacing_profile: list[float] | None = None  # spacing at sample points along row
     segments: list[RowSegment] | None = None           # visible vs inferred sections
     likelihood_profile: list[float] | None = None      # likelihood values sampled along centerline
+    ensemble_confidence: float | None = None           # agreement between ML and classical (0-1)
 
 
 # ---------------------------------------------------------------------------

@@ -93,6 +93,9 @@ class PipelineConfig:
     spacing_cv_warning: float = 0.15    # spacing CV above this triggers SPACING_IRREGULAR flag
     missing_row_factor: float = 1.5     # gap > factor * median_spacing triggers MISSING_ROWS
 
+    # --- Ensemble confidence ---
+    compute_ensemble_confidence: bool = False  # run shadow detection for agreement scoring
+
     # --- Debug ---
     save_debug_artifacts: bool = True
     debug_output_dir: str = "output"

@@ -73,6 +73,13 @@ TUNABLE_PARAMS = {
         "description": "Consecutive weak strips needed before trimming kicks in. Lower = trim faster at row ends. Higher = more tolerant of noisy tails.",
         "stage": 6,
     },
+    "compute_ensemble_confidence": {
+        "type": "checkbox",
+        "default": False,
+        "label": "Ensemble Confidence",
+        "description": "Run both ML and Gabor, colour rows by agreement. Doubles detection time but shows which rows both methods agree on.",
+        "stage": 0,
+    },
     "min_row_confidence": {
         "type": "slider", "min": 0.0, "max": 0.50, "step": 0.01,
         "default": 0.15,
@@ -134,10 +141,13 @@ async def run_tuned_detection(name: str, req: TuneRequest):
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
 
-    # Build config with custom params
+    # Build config with custom params (separate ensemble flag from PipelineConfig params)
     config_kwargs = {}
+    run_ensemble = False
     for key, value in req.params.items():
-        if key in TUNABLE_PARAMS:
+        if key == "compute_ensemble_confidence":
+            run_ensemble = bool(value)
+        elif key in TUNABLE_PARAMS:
             config_kwargs[key] = value
     config = PipelineConfig(**config_kwargs)
 
@@ -146,6 +156,14 @@ async def run_tuned_detection(name: str, req: TuneRequest):
         raise HTTPException(500, "Detection failed with tuned params")
 
     image_bgr, mask, result, mpp = result_tuple
+
+    # Run ensemble confidence if requested
+    if run_ensemble:
+        from gui.services.detection_runner import compute_ensemble_confidence
+        await asyncio.to_thread(
+            compute_ensemble_confidence, block, result, config, image_bgr, mask, mpp,
+        )
+
     overlay = generate_overlay(image_bgr, mask, result, mpp, block_name=name)
 
     # Save tuned overlay separately (don't overwrite default)

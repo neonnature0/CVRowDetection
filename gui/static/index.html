@@ -415,6 +415,15 @@
                 <span class="tune-value" x-text="params[p.key]"></span>
               </div>
             </template>
+
+            <!-- Checkbox -->
+            <template x-if="p.type === 'checkbox'">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" x-model="params[p.key]"
+                       style="accent-color: var(--accent); width: 16px; height: 16px;">
+                <span style="font-size: 12px;" x-text="params[p.key] ? 'On' : 'Off'"></span>
+              </label>
+            </template>
           </div>
         </template>
 
