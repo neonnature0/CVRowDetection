@@ -144,10 +144,10 @@ def load_cordyn_export() -> list[PropertyBlocks]:
 
 
 def load_test_blocks() -> list[PropertyBlocks]:
-    """Load blocks from test_blocks.json."""
-    path = Path("test_blocks.json")
+    """Load blocks from data/blocks/test_blocks.json."""
+    path = Path("data/blocks/test_blocks.json")
     if not path.exists():
-        logger.info("No test_blocks.json found, skipping")
+        logger.info("No data/blocks/test_blocks.json found, skipping")
         return []
 
     with open(path, "r", encoding="utf-8") as f:

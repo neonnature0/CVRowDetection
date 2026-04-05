@@ -264,7 +264,7 @@ def main():
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
     # Load test blocks
-    blocks_path = Path(__file__).parent / "test_blocks.json"
+    blocks_path = Path(__file__).parent / "data" / "blocks" / "test_blocks.json"
     with open(blocks_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     blocks = data.get("blocks", [])

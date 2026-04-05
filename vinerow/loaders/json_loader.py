@@ -8,7 +8,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PATH = "test_blocks.json"
+DEFAULT_PATH = "data/blocks/test_blocks.json"
 
 
 class JsonLoader:
