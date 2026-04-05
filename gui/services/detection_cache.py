@@ -1,45 +1,49 @@
-"""Detection result cache with explicit invalidation rules.
+"""Detection result cache with per-block subfolders.
 
-Cache artifacts per block:
-- output/detections/{name}.json  — pipeline result metrics + row data
-- output/detections/{name}_image.png — stitched aerial image
-- output/detections/{name}_overlay.png — image with detected rows drawn
-- output/thumbnails/{name}.png — downscaled thumbnail
+Cache structure:
+  output/detections/{block_name}/
+    result.json       — pipeline metrics + row data
+    image.png         — stitched aerial image
+    overlay.png       — image with detected rows drawn
+    thumbnail.png     — downscaled thumbnail
+    tuned_overlay.png — overlay with tuned parameters
+    tuned_config.json — per-block tuned parameter values
+    tuned_lines.png   — transparent lines-only diff image
 
 Invalidation rules (all logic lives here):
-- Block boundary edited → invalidate everything
-- Detection re-run → regenerate overlay + thumbnail (image re-fetched)
+- Block boundary edited → invalidate everything (delete subfolder)
+- Detection re-run → regenerate overlay + thumbnail
 - Annotation saved → nothing (annotations are independent)
-- ML model retrained → caller uses invalidate_all() to clear all caches
-- Block deleted → delete all associated files
+- ML model retrained → caller uses invalidate_all()
+- Block deleted → delete subfolder + annotation + images
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import shutil
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from gui.config import DETECTIONS_DIR, THUMBNAILS_DIR, IMAGES_DIR, ANNOTATIONS_DIR
+from gui.config import DETECTIONS_DIR, IMAGES_DIR, ANNOTATIONS_DIR
 from vinerow.types import BlockRowDetectionResult
 
 logger = logging.getLogger(__name__)
 
 
-def _ensure_dirs():
-    DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
-    THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+def _block_dir(name: str) -> Path:
+    return DETECTIONS_DIR / name
 
 
 def has_cached_result(name: str) -> bool:
-    return (DETECTIONS_DIR / f"{name}.json").exists()
+    return (_block_dir(name) / "result.json").exists()
 
 
 def load_cached_result(name: str) -> dict | None:
-    path = DETECTIONS_DIR / f"{name}.json"
+    path = _block_dir(name) / "result.json"
     if not path.exists():
         return None
     with open(path, "r", encoding="utf-8") as f:
@@ -54,9 +58,9 @@ def save_result(
     thumbnail_bgr: np.ndarray,
 ):
     """Save all detection artifacts for a block."""
-    _ensure_dirs()
+    d = _block_dir(name)
+    d.mkdir(parents=True, exist_ok=True)
 
-    # Result JSON
     result_data = {
         "block_name": name,
         "row_count": result.row_count,
@@ -76,70 +80,73 @@ def save_result(
             for r in result.rows
         ],
     }
-    with open(DETECTIONS_DIR / f"{name}.json", "w", encoding="utf-8") as f:
+    with open(d / "result.json", "w", encoding="utf-8") as f:
         json.dump(result_data, f, indent=2)
 
-    # Images
-    cv2.imwrite(str(DETECTIONS_DIR / f"{name}_image.png"), image_bgr)
-    cv2.imwrite(str(DETECTIONS_DIR / f"{name}_overlay.png"), overlay_bgr)
-    cv2.imwrite(str(THUMBNAILS_DIR / f"{name}.png"), thumbnail_bgr)
+    cv2.imwrite(str(d / "image.png"), image_bgr)
+    cv2.imwrite(str(d / "overlay.png"), overlay_bgr)
+    cv2.imwrite(str(d / "thumbnail.png"), thumbnail_bgr)
 
     logger.info("Cached detection for %s (%d rows)", name, result.row_count)
 
 
 def get_image_path(name: str, kind: str = "image") -> Path | None:
-    """Get path to a cached image. kind: 'image', 'overlay', or 'thumbnail'."""
+    """Get path to a cached image. kind: 'image', 'overlay', 'thumbnail'."""
+    d = _block_dir(name)
     if kind == "thumbnail":
-        p = THUMBNAILS_DIR / f"{name}.png"
+        p = d / "thumbnail.png"
     elif kind == "overlay":
-        p = DETECTIONS_DIR / f"{name}_overlay.png"
+        p = d / "overlay.png"
     else:
-        p = DETECTIONS_DIR / f"{name}_image.png"
+        p = d / "image.png"
     return p if p.exists() else None
+
+
+def get_tuned_path(name: str, kind: str) -> Path:
+    """Get path for tuned artifacts. kind: 'overlay', 'config', 'lines'."""
+    d = _block_dir(name)
+    d.mkdir(parents=True, exist_ok=True)
+    if kind == "config":
+        return d / "tuned_config.json"
+    elif kind == "lines":
+        return d / "tuned_lines.png"
+    return d / "tuned_overlay.png"
 
 
 # ── Invalidation ──
 
 def invalidate_block(name: str):
     """Remove all cached artifacts for a block (boundary changed or block deleted)."""
-    for pattern_dir, patterns in [
-        (DETECTIONS_DIR, [f"{name}.json", f"{name}_image.png", f"{name}_overlay.png"]),
-        (THUMBNAILS_DIR, [f"{name}.png"]),
-    ]:
-        for p in patterns:
-            path = pattern_dir / p
-            if path.exists():
-                path.unlink()
-                logger.info("Invalidated: %s", path)
+    d = _block_dir(name)
+    if d.exists():
+        shutil.rmtree(d)
+        logger.info("Invalidated block dir: %s", d)
 
-    # Also remove annotation and images if they exist
-    for d, p in [(ANNOTATIONS_DIR, f"{name}.json"), (IMAGES_DIR, f"{name}.png"),
-                 (IMAGES_DIR, f"{name}_mask.png")]:
-        path = d / p
+    for dd, p in [(ANNOTATIONS_DIR, f"{name}.json"), (IMAGES_DIR, f"{name}.png"),
+                  (IMAGES_DIR, f"{name}_mask.png")]:
+        path = dd / p
         if path.exists():
             path.unlink()
             logger.info("Invalidated: %s", path)
 
 
 def invalidate_detection(name: str):
-    """Remove detection cache only (for re-run). Keeps annotations."""
-    for p in [f"{name}.json", f"{name}_image.png", f"{name}_overlay.png"]:
-        path = DETECTIONS_DIR / p
-        if path.exists():
-            path.unlink()
-    thumb = THUMBNAILS_DIR / f"{name}.png"
-    if thumb.exists():
-        thumb.unlink()
+    """Remove detection cache only (for re-run). Keeps annotations and tuned config."""
+    d = _block_dir(name)
+    for fname in ["result.json", "image.png", "overlay.png", "thumbnail.png",
+                  "tuned_overlay.png", "tuned_lines.png"]:
+        p = d / fname
+        if p.exists():
+            p.unlink()
     logger.info("Invalidated detection cache for %s", name)
 
 
 def invalidate_all():
     """Remove all detection caches (e.g., after model retrain)."""
     count = 0
-    for d in [DETECTIONS_DIR, THUMBNAILS_DIR]:
-        if d.exists():
-            for f in d.iterdir():
-                if f.is_file():
-                    f.unlink()
-                    count += 1
-    logger.info("Invalidated all detection caches (%d files)", count)
+    if DETECTIONS_DIR.exists():
+        for block_dir in DETECTIONS_DIR.iterdir():
+            if block_dir.is_dir():
+                shutil.rmtree(block_dir)
+                count += 1
+    logger.info("Invalidated all detection caches (%d blocks)", count)

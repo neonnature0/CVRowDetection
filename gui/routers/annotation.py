@@ -39,7 +39,7 @@ def _ensure_annotation(name: str):
         raise HTTPException(400, "Run detection first before annotating")
 
     # Need the aerial image and mask (these were saved by detection_cache)
-    src_image = DETECTIONS_DIR / f"{name}_image.png"
+    src_image = DETECTIONS_DIR / name / "image.png"
     if not src_image.exists():
         raise HTTPException(400, "Aerial image not cached. Re-run detection.")
 
@@ -170,7 +170,7 @@ def prepare_blind_annotation(name: str):
     ann_path = _annotation_path(name)
 
     # Need the aerial image — either from detection cache or fetch fresh
-    src_image = DETECTIONS_DIR / f"{name}_image.png"
+    src_image = DETECTIONS_DIR / name / "image.png"
     if not src_image.exists():
         raise HTTPException(400, "Run detection first to cache the aerial image")
 

@@ -13,7 +13,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from gui.config import DETECTIONS_DIR
 from gui.services import block_registry, detection_cache
 from gui.services.detection_runner import (
     detect_block, generate_overlay, generate_lines_only_overlay, generate_thumbnail,
@@ -170,17 +169,16 @@ async def run_tuned_detection(name: str, req: TuneRequest):
 
     # Save tuned overlay and lines-only diff separately (don't overwrite default)
     import cv2
-    DETECTIONS_DIR.mkdir(parents=True, exist_ok=True)
-    tuned_overlay_path = DETECTIONS_DIR / f"{name}_tuned_overlay.png"
+    tuned_overlay_path = detection_cache.get_tuned_path(name, "overlay")
     cv2.imwrite(str(tuned_overlay_path), overlay)
 
     # Lines-only transparent PNG for onion-skin diff
     lines_only = generate_lines_only_overlay(result, image_bgr.shape)
-    tuned_lines_path = DETECTIONS_DIR / f"{name}_tuned_lines.png"
+    tuned_lines_path = detection_cache.get_tuned_path(name, "lines")
     cv2.imwrite(str(tuned_lines_path), lines_only)
 
     # Save tuned params for reference
-    tuned_config_path = DETECTIONS_DIR / f"{name}_tuned_config.json"
+    tuned_config_path = detection_cache.get_tuned_path(name, "config")
     tuned_config_path.write_text(json.dumps(req.params, indent=2), encoding="utf-8")
 
     # Return metrics for comparison
@@ -198,24 +196,24 @@ async def run_tuned_detection(name: str, req: TuneRequest):
 @router.post("/{name}/apply-tuned")
 def apply_tuned_config(name: str):
     """Promote the tuned result to be the default (overwrite default cache)."""
-    tuned_overlay = DETECTIONS_DIR / f"{name}_tuned_overlay.png"
-    tuned_config = DETECTIONS_DIR / f"{name}_tuned_config.json"
+    tuned_overlay = detection_cache.get_tuned_path(name, "overlay")
 
     if not tuned_overlay.exists():
         raise HTTPException(404, "No tuned result to apply. Run /tune first.")
 
     import shutil
-    default_overlay = DETECTIONS_DIR / f"{name}_overlay.png"
+    default_overlay = detection_cache.get_image_path(name, "overlay")
+    if default_overlay is None:
+        default_overlay = detection_cache._block_dir(name) / "overlay.png"
     shutil.copy2(str(tuned_overlay), str(default_overlay))
 
     # Regenerate thumbnail from new overlay
     import cv2
-    from gui.config import THUMBNAILS_DIR
     overlay_img = cv2.imread(str(default_overlay))
     if overlay_img is not None:
         thumb = generate_thumbnail(overlay_img)
-        THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(THUMBNAILS_DIR / f"{name}.png"), thumb)
+        thumb_path = detection_cache._block_dir(name) / "thumbnail.png"
+        cv2.imwrite(str(thumb_path), thumb)
 
     return {"status": "applied"}
 
@@ -223,7 +221,7 @@ def apply_tuned_config(name: str):
 @router.get("/{name}/tuned-overlay")
 def get_tuned_overlay(name: str):
     """Serve the tuned overlay image (for side-by-side comparison)."""
-    path = DETECTIONS_DIR / f"{name}_tuned_overlay.png"
+    path = detection_cache.get_tuned_path(name, "overlay")
     if not path.exists():
         raise HTTPException(404, "No tuned overlay. Run /tune first.")
     return FileResponse(path, media_type="image/png")
@@ -232,7 +230,7 @@ def get_tuned_overlay(name: str):
 @router.get("/{name}/tuned-lines")
 def get_tuned_lines(name: str):
     """Serve the tuned lines-only transparent PNG (for onion-skin diff)."""
-    path = DETECTIONS_DIR / f"{name}_tuned_lines.png"
+    path = detection_cache.get_tuned_path(name, "lines")
     if not path.exists():
         raise HTTPException(404, "No tuned lines image. Run /tune first.")
     return FileResponse(path, media_type="image/png")
@@ -241,7 +239,7 @@ def get_tuned_lines(name: str):
 @router.get("/{name}/tuned-config")
 def get_tuned_config(name: str):
     """Get the saved tuned params for a block."""
-    path = DETECTIONS_DIR / f"{name}_tuned_config.json"
+    path = detection_cache.get_tuned_path(name, "config")
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
