@@ -230,7 +230,10 @@ def main():
     group.add_argument("--block", type=str, help="Process a single block by name")
     group.add_argument("--all", action="store_true", help="Process all test blocks")
     group.add_argument("--geojson", type=str, help="Process a GeoJSON file")
+    group.add_argument("--source-db", action="store_true",
+                       help="Fetch blocks from Supabase (requires SUPABASE_URL/KEY in .env)")
 
+    parser.add_argument("--org-id", type=str, help="Organisation ID filter (with --source-db)")
     parser.add_argument("--source", choices=["linz", "arcgis", "kelowna"], help="Tile source")
     parser.add_argument("--zoom", type=int, help="Zoom level override")
     parser.add_argument("--output", default="output", help="Output directory")
@@ -263,7 +266,10 @@ def main():
     config = PipelineConfig(**config_kwargs)
 
     # Load blocks
-    if args.geojson:
+    if args.source_db:
+        from vinerow.loaders.supabase_loader import SupabaseLoader
+        blocks = SupabaseLoader(org_id=args.org_id).load()
+    elif args.geojson:
         blocks = [load_geojson_block(args.geojson)]
     elif args.block:
         all_blocks = load_test_blocks()
