@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .env
 *.pt
+models/*.pth
 training/checkpoints/
 training/checkpoints_aligned/
 training/checkpoints_fpn/

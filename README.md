@@ -104,7 +104,7 @@ cv-row-detection/
 ### 1. Create virtual environment
 
 ```bash
-cd apps/web/scripts/cv-row-detection
+cd CVRowDetection
 python -m venv venv        # Use Python 3.11 or 3.12 (not 3.14 — scipy issues)
 
 # Windows
