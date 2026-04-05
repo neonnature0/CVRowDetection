@@ -38,44 +38,41 @@
   <!-- Main content area -->
   <main>
 
-    <!-- Map View (Add Blocks) -->
-    <template x-if="$store.app.view === 'map'">
-      <div style="display: flex; height: 100%;">
-        <div id="map-container" style="flex: 1;"></div>
-        <div class="map-sidebar">
-          <h3>Blocks</h3>
-          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
-            Draw a polygon on the map, then click <b>Save Block</b>.
-          </div>
-          <button class="btn btn-primary" style="width: 100%;" id="save-block-btn" disabled>
-            Save Block
-          </button>
-          <div id="sidebar-block-list" style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px;">
-            <!-- Populated by map-view.js -->
-          </div>
+    <!-- Map View (Add Blocks) — use x-show to keep DOM alive for MapLibre -->
+    <div class="view-map" x-show="$store.app.view === 'map'">
+      <div id="map-container"></div>
+      <div class="map-sidebar">
+        <h3>Blocks</h3>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+          Draw a polygon on the map, then click <b>Save Block</b>.
+        </div>
+        <button class="btn btn-primary" style="width: 100%;" id="save-block-btn" disabled>
+          Save Block
+        </button>
+        <div id="sidebar-block-list" style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px;">
         </div>
       </div>
-    </template>
+    </div>
 
     <!-- Annotate View (placeholder) -->
-    <template x-if="$store.app.view === 'annotate'">
-      <div class="placeholder-view">Annotate view — coming in Phase 2</div>
-    </template>
+    <div x-show="$store.app.view === 'annotate'" class="placeholder-view">
+      Annotate view — coming in Phase 2
+    </div>
 
     <!-- Library View (placeholder) -->
-    <template x-if="$store.app.view === 'library'">
-      <div class="placeholder-view">Library view — coming in Phase 2</div>
-    </template>
+    <div x-show="$store.app.view === 'library'" class="placeholder-view">
+      Library view — coming in Phase 2
+    </div>
 
     <!-- Train View (placeholder) -->
-    <template x-if="$store.app.view === 'train'">
-      <div class="placeholder-view">Training view — coming in Phase 3</div>
-    </template>
+    <div x-show="$store.app.view === 'train'" class="placeholder-view">
+      Training view — coming in Phase 3
+    </div>
 
     <!-- Verify View (placeholder) -->
-    <template x-if="$store.app.view === 'verify'">
-      <div class="placeholder-view">Verification view — coming in Phase 3</div>
-    </template>
+    <div x-show="$store.app.view === 'verify'" class="placeholder-view">
+      Verification view — coming in Phase 3
+    </div>
 
   </main>
 

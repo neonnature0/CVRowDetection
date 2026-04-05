@@ -230,17 +230,25 @@ async function deleteBlock(name) {
   }
 }
 
-// ── Lifecycle: init map when view becomes active ──
+// ── Lifecycle: init map after DOM is ready ──
 
-// Use a MutationObserver to detect when #map-container appears in the DOM
-const _observer = new MutationObserver(() => {
-  const el = document.getElementById('map-container');
-  if (el && !_map) {
-    // Small delay to ensure the container has dimensions
-    setTimeout(() => {
-      initMap();
-      renderSidebarList();
-    }, 50);
-  }
+// Alpine's defer means it loads after DOMContentLoaded, so we listen for its init event
+document.addEventListener('alpine:init', () => {
+  // Watch for view changes to resize the map when it becomes visible
+  Alpine.effect(() => {
+    const view = Alpine.store('app').view;
+    if (view === 'map' && _map) {
+      // MapLibre needs a resize after container becomes visible
+      setTimeout(() => _map.resize(), 50);
+    }
+  });
 });
-_observer.observe(document.body, { childList: true, subtree: true });
+
+// Init map on first DOMContentLoaded — container exists because we use x-show not x-if
+document.addEventListener('DOMContentLoaded', () => {
+  // Wait for Alpine to process x-show, then init
+  setTimeout(() => {
+    initMap();
+    renderSidebarList();
+  }, 200);
+});
