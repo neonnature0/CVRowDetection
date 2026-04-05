@@ -626,7 +626,7 @@ class AnnotatorHandler(SimpleHTTPRequestHandler):
             if AnnotatorHandler._sam_model is None:
                 logger.info("SAM: loading MobileSAM model (first time)...")
                 from ultralytics import SAM
-                AnnotatorHandler._sam_model = SAM("mobile_sam.pt")
+                AnnotatorHandler._sam_model = SAM(str(Path(__file__).parent / "models" / "mobile_sam.pt"))
                 logger.info("SAM: model loaded")
 
             # Run SAM with point prompt

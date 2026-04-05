@@ -26,7 +26,7 @@ class PipelineConfig:
     ridge_scale_factor: float = 0.2     # sigma = factor * spacing_px
     ridge_angle_tolerance_deg: float = 15.0  # suppress responses outside this angle range
     ridge_mode: str = "ml"                 # hessian|luminance|exg_only|gabor|ensemble|hessian_small|hessian_large|ml|ml_ensemble
-    ml_model_path: str = "training/checkpoints_fpn/best_model.pth"  # path to trained checkpoint
+    ml_model_path: str = "models/best_model_fpn.pth"  # path to trained checkpoint
     ml_align_rows: bool = False     # rotate image to align rows vertically before ML inference
     ml_decoder: str = "fpn"         # "unet" or "fpn"
 
