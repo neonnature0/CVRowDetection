@@ -171,6 +171,8 @@ def main():
     parser.add_argument("--aligned", action="store_true", help="Use aligned transforms (reduced rotation)")
     parser.add_argument("--run-test", action="store_true", help="Run test evaluation only")
     parser.add_argument("--checkpoint", type=str, help="Checkpoint for test evaluation")
+    parser.add_argument("--calibrate", action="store_true",
+                        help="Run temperature scaling calibration after training")
     args = parser.parse_args()
 
     # Override defaults when aligned or fpn
@@ -330,6 +332,66 @@ def main():
         test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
         test_loss, test_dice = run_evaluation(model, test_loader, bce_loss, dice_loss, device)
         print(f"Test Loss: {test_loss:.4f} | Test Dice: {test_dice:.4f}")
+
+    # Temperature scaling calibration (Guo et al. 2017)
+    if args.calibrate:
+        _run_temperature_calibration(model, val_loader if val_patches else test_loader,
+                                     output_dir, device)
+
+
+def _run_temperature_calibration(model, cal_loader, output_dir, device):
+    """Calibrate model confidence via temperature scaling.
+
+    Learns a single scalar T that divides logits before sigmoid,
+    optimised to minimise BCE on the calibration set. Does not
+    change model weights — only rescales confidence values.
+    """
+    print("\nRunning temperature scaling calibration...")
+    model.load_state_dict(torch.load(output_dir / "best_model.pth", map_location=device, weights_only=True))
+
+    # Set to inference mode
+    for param in model.parameters():
+        param.requires_grad_(False)
+
+    # Collect logits and targets
+    all_logits = []
+    all_targets = []
+    with torch.no_grad():
+        for batch in cal_loader:
+            images = batch["image"].to(device)
+            targets = batch["target"].to(device)
+            logits = model(images)
+            all_logits.append(logits.cpu())
+            all_targets.append(targets.cpu())
+
+    all_logits = torch.cat(all_logits)
+    all_targets = torch.cat(all_targets)
+
+    # Optimise temperature T to minimise BCE(sigmoid(logits/T), targets)
+    temperature = nn.Parameter(torch.ones(1) * 1.5)
+    optimizer_t = torch.optim.LBFGS([temperature], lr=0.01, max_iter=50)
+
+    def _cal_closure():
+        optimizer_t.zero_grad()
+        scaled = all_logits / temperature
+        loss = nn.functional.binary_cross_entropy_with_logits(scaled, all_targets)
+        loss.backward()
+        return loss
+
+    optimizer_t.step(_cal_closure)
+    T = float(temperature.item())
+    print(f"Calibrated temperature: T = {T:.3f}")
+    if T < 1.0:
+        print("  (T < 1 means model was under-confident)")
+    elif T > 5.0:
+        print("  (T > 5 is suspiciously high — check training data)")
+
+    # Save calibrated checkpoint (model weights + T)
+    torch.save({
+        "model_state_dict": model.state_dict(),
+        "temperature": T,
+    }, output_dir / "best_model.pth")
+    print(f"Saved calibrated model (T={T:.3f}) to {output_dir / 'best_model.pth'}")
 
 
 if __name__ == "__main__":

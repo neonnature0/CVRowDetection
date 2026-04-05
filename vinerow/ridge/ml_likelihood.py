@@ -86,9 +86,18 @@ def compute_ml_likelihood(
 
         logger.info("Loading ML model from %s (decoder=%s)", model_path, decoder_type)
         model = create_model(encoder_name="mobilenet_v2", encoder_weights=None, decoder_type=decoder_type)
-        state = torch.load(model_path, map_location="cpu", weights_only=True)
-        model.load_state_dict(state)
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+        # Support both plain state_dict and dict with temperature
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+            T = checkpoint.get("temperature", 1.0)
+        else:
+            model.load_state_dict(checkpoint)
+            T = 1.0
         model.train(False)
+        model._temperature = T
+        if T != 1.0:
+            logger.info("Temperature scaling: T=%.3f", T)
         _cached_model = model
         _cached_path = model_path
         _cached_decoder = decoder_type

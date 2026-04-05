@@ -69,8 +69,10 @@ def predict_block_likelihood(
                 tensor = torch.from_numpy(patch).permute(2, 0, 1).float() / 255.0
                 tensor = tensor.unsqueeze(0).to(device)
 
-                # Forward pass + sigmoid
+                # Forward pass + temperature-scaled sigmoid
                 logits = model(tensor)
+                if hasattr(model, '_temperature') and model._temperature != 1.0:
+                    logits = logits / model._temperature
                 pred = torch.sigmoid(logits).squeeze().cpu().numpy()
 
                 # Accumulate (only the valid region)
