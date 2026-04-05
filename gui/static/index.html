@@ -21,6 +21,8 @@
   <script src="/js/api.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/map-view.js"></script>
+  <script src="/js/library-view.js"></script>
+  <script src="/js/annotate-view.js"></script>
 </head>
 
 <body x-data x-init="$store.app.init()">
@@ -54,14 +56,153 @@
       </div>
     </div>
 
-    <!-- Annotate View (placeholder) -->
-    <div x-show="$store.app.view === 'annotate'" class="placeholder-view">
-      Annotate view — coming in Phase 2
+    <!-- Annotate View -->
+    <div x-show="$store.app.view === 'annotate'" class="annotate-container" x-data="annotateView">
+
+      <!-- Empty queue -->
+      <template x-if="queue.length === 0">
+        <div class="placeholder-view">
+          No blocks ready for annotation. Detect some blocks first (Library &rarr; Detect).
+        </div>
+      </template>
+
+      <!-- Has items in queue -->
+      <template x-if="queue.length > 0">
+        <div style="display: flex; flex-direction: column; height: 100%;">
+          <!-- Header bar -->
+          <div class="annotate-toolbar">
+            <span style="font-weight: 600;">Annotate</span>
+            <span class="name" x-text="current ? current.name : ''"></span>
+            <span style="color: var(--text-muted); font-size: 12px;" x-text="progress"></span>
+          </div>
+
+          <!-- Content area -->
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative;">
+
+            <!-- Idle: click to start -->
+            <template x-if="state === 'idle'">
+              <div style="text-align: center;">
+                <p style="color: var(--text-muted); margin-bottom: 16px;">
+                  Block <b x-text="current ? current.name : ''"></b> — ready to detect
+                </p>
+                <button class="btn btn-primary" @click="prepareAndDetect()">
+                  Run Detection
+                </button>
+                <button class="btn btn-secondary" style="margin-left: 8px;" @click="skip()">
+                  Skip
+                </button>
+              </div>
+            </template>
+
+            <!-- Loading: detection in progress -->
+            <template x-if="state === 'loading'">
+              <div style="text-align: center;">
+                <div class="spinner"></div>
+                <p style="color: var(--text-muted); margin-top: 12px;">
+                  Fetching tiles &amp; detecting rows...
+                </p>
+                <button class="btn btn-secondary" style="margin-top: 12px;" @click="cancelDetection()">
+                  Cancel
+                </button>
+              </div>
+            </template>
+
+            <!-- Ready: show overlay, choose action -->
+            <template x-if="state === 'ready'">
+              <div style="text-align: center; max-height: 100%; overflow: auto;">
+                <img :src="overlayUrl()" alt="detection overlay"
+                     style="max-width: 100%; max-height: calc(100vh - 160px); border-radius: 4px;">
+                <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: center;">
+                  <button class="btn btn-success" @click="accept()">Accept</button>
+                  <button class="btn btn-primary" @click="launchEditor()">Edit</button>
+                  <button class="btn btn-secondary" @click="skip()">Skip</button>
+                </div>
+              </div>
+            </template>
+
+            <!-- Editing: matplotlib open -->
+            <template x-if="state === 'editing'">
+              <div style="text-align: center;">
+                <p style="color: var(--accent); font-size: 16px;">Annotation editor open</p>
+                <p style="color: var(--text-muted); margin-top: 8px;">
+                  Edit rows in the matplotlib window, then save (S) and close it.
+                </p>
+                <div class="spinner" style="margin-top: 16px;"></div>
+              </div>
+            </template>
+
+            <!-- Error -->
+            <template x-if="state === 'error'">
+              <div style="text-align: center;">
+                <p style="color: var(--danger);" x-text="errorMsg"></p>
+                <button class="btn btn-secondary" style="margin-top: 12px;" @click="retry()">
+                  Retry
+                </button>
+                <button class="btn btn-secondary" style="margin-left: 8px;" @click="skip()">
+                  Skip
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
     </div>
 
-    <!-- Library View (placeholder) -->
-    <div x-show="$store.app.view === 'library'" class="placeholder-view">
-      Library view — coming in Phase 2
+    <!-- Library View -->
+    <div x-show="$store.app.view === 'library'" class="library-container" x-data="libraryView">
+      <!-- Filter bar -->
+      <div class="library-toolbar">
+        <span style="font-size: 13px; color: var(--text-muted);">Filter:</span>
+        <template x-for="s in ['all','draft','detected','annotated','verified']">
+          <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': filter === s }"
+                  @click="filter = s" x-text="s"></button>
+        </template>
+        <span style="margin-left: auto; font-size: 12px; color: var(--text-muted);"
+              x-text="filteredBlocks.length + ' blocks'"></span>
+      </div>
+
+      <!-- Block grid -->
+      <div class="library-grid">
+        <template x-for="block in filteredBlocks" :key="block.name">
+          <div class="library-card">
+            <!-- Thumbnail or placeholder -->
+            <div class="card-thumb" @click="expand(block.name)">
+              <template x-if="hasDetection(block)">
+                <img :src="thumbnailUrl(block.name)" alt="thumbnail" loading="lazy">
+              </template>
+              <template x-if="!hasDetection(block)">
+                <div class="card-thumb-empty">No detection</div>
+              </template>
+            </div>
+
+            <!-- Info -->
+            <div class="card-info">
+              <span class="name" x-text="block.name"></span>
+              <span class="stage" :class="'stage-' + (block.stage || 'draft')"
+                    x-text="block.stage || 'draft'"></span>
+            </div>
+
+            <!-- Actions -->
+            <div class="card-actions">
+              <button class="btn btn-primary btn-sm"
+                      @click="runDetection(block.name)"
+                      :disabled="detecting === block.name"
+                      x-text="detecting === block.name ? 'Detecting...' : 'Detect'"></button>
+              <button class="btn btn-secondary btn-sm"
+                      @click="launchAnnotate(block.name)"
+                      :disabled="editorBlock === block.name">Annotate</button>
+              <button class="btn btn-danger btn-sm" @click="deleteBlock(block.name)">Del</button>
+            </div>
+
+            <!-- Expanded overlay -->
+            <template x-if="expandedBlock === block.name && hasDetection(block)">
+              <div class="card-expanded">
+                <img :src="overlayUrl(block.name)" alt="overlay" style="width:100%;">
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- Train View (placeholder) -->

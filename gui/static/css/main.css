@@ -81,6 +81,54 @@ main { flex: 1; position: relative; overflow: hidden; }
 .stage-annotated { background: #16a34a33; color: #4ade80; }
 .stage-verified { background: #d9770633; color: #fbbf24; }
 
+/* ── Annotate view ── */
+.annotate-container { height: 100%; }
+.annotate-toolbar {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+}
+.annotate-toolbar .name { font-family: monospace; font-weight: 600; }
+
+/* Spinner */
+.spinner {
+  width: 32px; height: 32px; margin: 0 auto;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Library view ── */
+.library-container { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.library-toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn-active { background: var(--accent) !important; color: #fff !important; }
+
+.library-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px; padding: 16px; overflow-y: auto; flex: 1;
+}
+.library-card {
+  background: var(--bg-card); border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border); transition: border-color 0.15s;
+}
+.library-card:hover { border-color: var(--accent); }
+
+.card-thumb { height: 160px; background: #111; display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.card-thumb-empty { color: var(--text-muted); font-size: 12px; }
+
+.card-info {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 10px; font-size: 12px;
+}
+.card-info .name { font-family: monospace; font-weight: 600; }
+
+.card-actions { display: flex; gap: 4px; padding: 0 10px 10px; }
+.card-expanded { padding: 8px; background: #111; }
+
 /* ── Placeholder views ── */
 .placeholder-view {
   display: flex; align-items: center; justify-content: center;
