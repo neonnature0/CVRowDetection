@@ -149,86 +149,95 @@ def run_pipeline(
     logger.info("Stage 3 (ridge likelihood): %.2fs", timings.ridge)
 
     # ------------------------------------------------------------------
-    # Stage 4: Local Candidate Extraction
+    # Stages 4-6: Row Detection + Fitting
     # ------------------------------------------------------------------
-    t0 = time.perf_counter()
-    from vinerow.candidates.extraction import extract_candidates
-    candidates, strip_centers = extract_candidates(
-        likelihood_map, preprocessed.mask, coarse, mpp, config,
-        luminance=preprocessed.luminance,
-    )
-    timings.candidates = time.perf_counter() - t0
-    logger.info(
-        "Stage 4 (candidates): %.2fs, %d candidates in %d strips",
-        timings.candidates, len(candidates),
-        len(set(c.strip_index for c in candidates)) if candidates else 0,
-    )
+    occlusion_gaps = []
+    candidates = []
+    trajectories = []
+    strip_centers = []
 
-    if len(candidates) < 2:
-        logger.error("Pipeline failed: fewer than 2 candidates found")
-        return None
+    if config.row_detection_method == "global_profile":
+        # Global perpendicular profile: project likelihood onto perp axis,
+        # detect peaks, create straight lines clipped to mask.
+        t0 = time.perf_counter()
+        from vinerow.detection.global_profile import detect_rows_global_profile
+        fitted_rows = detect_rows_global_profile(
+            likelihood_map, preprocessed.mask, coarse, mpp, config,
+        )
+        timings.tracking = time.perf_counter() - t0
+        timings.fitting = 0.0
+        timings.candidates = 0.0
+        logger.info(
+            "Stages 4-6 (global profile): %.2fs, %d rows",
+            timings.tracking, len(fitted_rows),
+        )
+    else:
+        # Legacy strip-based tracker
+        # Stage 4: Candidate Extraction
+        t0 = time.perf_counter()
+        from vinerow.candidates.extraction import extract_candidates
+        candidates, strip_centers = extract_candidates(
+            likelihood_map, preprocessed.mask, coarse, mpp, config,
+            luminance=preprocessed.luminance,
+        )
+        timings.candidates = time.perf_counter() - t0
+        logger.info(
+            "Stage 4 (candidates): %.2fs, %d candidates in %d strips",
+            timings.candidates, len(candidates),
+            len(set(c.strip_index for c in candidates)) if candidates else 0,
+        )
 
-    # ------------------------------------------------------------------
-    # Stage 5: Row Tracking
-    # ------------------------------------------------------------------
-    t0 = time.perf_counter()
-    from vinerow.tracking.assignment import track_rows
-    trajectories = track_rows(candidates, strip_centers, coarse, config)
-    timings.tracking = time.perf_counter() - t0
-    logger.info(
-        "Stage 5 (tracking): %.2fs, %d tracks",
-        timings.tracking, len(trajectories),
-    )
+        if len(candidates) < 2:
+            logger.error("Pipeline failed: fewer than 2 candidates found")
+            return None
 
-    # Record tracking diagnostics
-    diag = diag_current()
-    if diag:
-        diag.n_candidates = len(candidates)
-        diag.n_strips = len(strip_centers)
-        diag.n_tracks_after_tracking = len(trajectories)
+        # Stage 5: Tracking
+        t0 = time.perf_counter()
+        from vinerow.tracking.assignment import track_rows
+        trajectories = track_rows(candidates, strip_centers, coarse, config)
+        timings.tracking = time.perf_counter() - t0
+        logger.info("Stage 5 (tracking): %.2fs, %d tracks", timings.tracking, len(trajectories))
 
-    if len(trajectories) < 1:
-        logger.error("Pipeline failed: no row tracks formed")
-        return None
+        diag = diag_current()
+        if diag:
+            diag.n_candidates = len(candidates)
+            diag.n_strips = len(strip_centers)
+            diag.n_tracks_after_tracking = len(trajectories)
 
-    # ------------------------------------------------------------------
-    # Stage 5b: Post-Tracking Stitching
-    # ------------------------------------------------------------------
-    t0 = time.perf_counter()
-    from vinerow.tracking.stitching import stitch_trajectories
-    n_strips = len(strip_centers)
-    trajectories, occlusion_gaps = stitch_trajectories(
-        trajectories, n_strips, coarse.spacing_px, config,
-    )
-    stitch_time = time.perf_counter() - t0
-    timings.tracking += stitch_time  # fold into tracking time
-    logger.info(
-        "Stage 5b (stitching): %.2fs, %d tracks after stitch, %d occlusion gaps",
-        stitch_time, len(trajectories), len(occlusion_gaps),
-    )
+        if len(trajectories) < 1:
+            logger.error("Pipeline failed: no row tracks formed")
+            return None
 
-    # Record stitching diagnostics
-    diag = diag_current()
-    if diag:
-        diag.n_tracks_after_stitching = len(trajectories)
-        diag.n_occlusion_gaps = len(occlusion_gaps)
+        # Stage 5b: Stitching
+        t0 = time.perf_counter()
+        from vinerow.tracking.stitching import stitch_trajectories
+        n_strips = len(strip_centers)
+        trajectories, occlusion_gaps = stitch_trajectories(
+            trajectories, n_strips, coarse.spacing_px, config,
+        )
+        stitch_time = time.perf_counter() - t0
+        timings.tracking += stitch_time
+        logger.info(
+            "Stage 5b (stitching): %.2fs, %d tracks, %d occlusion gaps",
+            stitch_time, len(trajectories), len(occlusion_gaps),
+        )
 
-    # ------------------------------------------------------------------
-    # Stage 6: Centerline Fitting
-    # ------------------------------------------------------------------
-    t0 = time.perf_counter()
-    from vinerow.fitting.splines import fit_centerlines
-    fitted_rows = fit_centerlines(
-        trajectories, coarse, mpp, preprocessed.mask, tile_origin, zoom, tile_size, config,
-        likelihood_map=likelihood_map,
-        strip_centers=strip_centers,
-        exg=preprocessed.exg,
-    )
-    timings.fitting = time.perf_counter() - t0
-    logger.info(
-        "Stage 6 (fitting): %.2fs, %d rows fitted",
-        timings.fitting, len(fitted_rows),
-    )
+        diag = diag_current()
+        if diag:
+            diag.n_tracks_after_stitching = len(trajectories)
+            diag.n_occlusion_gaps = len(occlusion_gaps)
+
+        # Stage 6: Fitting
+        t0 = time.perf_counter()
+        from vinerow.fitting.splines import fit_centerlines
+        fitted_rows = fit_centerlines(
+            trajectories, coarse, mpp, preprocessed.mask, tile_origin, zoom, tile_size, config,
+            likelihood_map=likelihood_map,
+            strip_centers=strip_centers,
+            exg=preprocessed.exg,
+        )
+        timings.fitting = time.perf_counter() - t0
+        logger.info("Stage 6 (fitting): %.2fs, %d rows fitted", timings.fitting, len(fitted_rows))
 
     # ------------------------------------------------------------------
     # Stage 7: Post-Processing
