@@ -2,7 +2,7 @@
 
 Automated detection of vine row positions, orientation, and spacing from aerial/satellite imagery. Given a vineyard block boundary polygon, the pipeline fetches aerial tiles, isolates the block region, and runs a 7-stage computer vision pipeline to detect individual row centerlines as curved polylines.
 
-Used in production as part of a personal project to auto-populate block geometry for spray planning, planting records, and compliance tracking.
+Designed to auto-populate vineyard block geometry for spray planning, planting records, and compliance tracking.
 
 ## Results
 
@@ -62,9 +62,9 @@ Aerial imagery is automatically selected by longitude:
 ## Project Structure
 
 ```
-cv-row-detection/
+CVRowDetection/
 |
-|-- vinerow/                    # Production pipeline package
+|-- vinerow/                    # Core row detection library
 |   |-- acquisition/            #   Tile fetching, geo utilities
 |   |-- preprocessing/          #   Multi-channel image processing
 |   |-- orientation/            #   2D FFT angle/spacing detection
@@ -72,31 +72,44 @@ cv-row-detection/
 |   |-- candidates/             #   Strip-based candidate extraction
 |   |-- tracking/               #   Hungarian row tracking
 |   |-- fitting/                #   Spline centerline fitting
+|   |-- detection/              #   Global profile row detection method
 |   |-- postprocessing/         #   Metrics, quality flags
+|   |-- loaders/                #   Pluggable block-data backends (JSON, GeoJSON, Supabase)
+|   |-- debug/                  #   Diagnostics and debug artifacts
 |   |-- config.py               #   All tunable parameters
 |   |-- pipeline.py             #   Main orchestrator
 |   +-- types.py                #   Data types (FittedRow, etc.)
 |
-|-- training/                   # ML training pipeline
+|-- block_detection/            # Block boundary detection model (separate from row detection)
+|   |-- encoder.py              #   SharedEncoder (MobileNet-v2 + FPN)
+|   |-- heads/                  #   Detection heads
+|   |-- predict_blocks.py       #   Inference
+|   +-- train_blocks.py         #   Training
+|
+|-- training/                   # ML row model training
 |   |-- dataset.py              #   PyTorch Dataset + augmentations
 |   |-- model.py                #   U-Net model definition
 |   |-- train.py                #   Training loop (BCE + Dice loss)
-|   |-- predict.py              #   Full-block patch-stitched inference
-|   +-- checkpoints/            #   Saved model weights
+|   +-- predict.py              #   Full-block patch-stitched inference
 |
-|-- dataset/
-|   |-- annotations/            #   Human-verified row positions (JSON)
-|   |-- images/                 #   Cached block aerial images + masks
-|   +-- training/               #   Generated patches + targets for ML
+|-- data/
+|   +-- blocks/
+|       +-- test_blocks.json    #   Benchmark block definitions (12 blocks, inline GeoJSON)
+|
+|-- models/                     # Pre-trained model weights (download via models/download_models.py)
+|
+|-- gui/                        # Future: interactive frontend (planned)
+|
+|-- dataset/                    # (gitignored) Training data, cached images, annotations
 |
 |-- cli.py                      # Command-line interface
 |-- benchmark.py                # Regression benchmark (all blocks)
 |-- evaluate_gt.py              # Ground truth evaluation (P/R/F1)
 |-- annotate.py                 # Interactive annotation tool (matplotlib)
+|-- map_annotator.py            # Web-based map annotation (Leaflet)
 |-- visual_verify.py            # Generate overlay verification images
 |-- generate_training_data.py   # Convert annotations to ML training patches
-|-- prepare_dataset.py          # Prepare annotation JSONs from pipeline output
-+-- test_blocks.json            # Block definitions (boundaries + ground truth)
++-- prepare_dataset.py          # Prepare annotation JSONs from pipeline output
 ```
 
 ## Setup
@@ -218,7 +231,7 @@ python -m training.train --run-test --checkpoint training/checkpoints/best_model
 
 ## Adding New Blocks
 
-1. Add the block boundary to `test_blocks.json` (GeoJSON polygon, `[longitude, latitude]` coordinate order)
+1. Add the block boundary to `data/blocks/test_blocks.json` (GeoJSON polygon, `[longitude, latitude]` coordinate order)
 2. Run `python prepare_dataset.py` to fetch tiles and create annotation JSON
 3. Run `python annotate.py --block "YourBlock"` to correct row positions
 4. Run `python generate_training_data.py` to regenerate ML training patches
@@ -300,20 +313,7 @@ Motivation: the Gabor filter struggles on blocks where both vine canopy and inte
 - Architecture: U-Net with MobileNet-v2 encoder, BCE + Dice loss
 - Training: CPU-only, ~12 min/epoch, early stopping
 
-### Legacy Files Reference
+### Legacy Files
 
-These files are from Generation 1 and are **no longer used** by the active pipeline. They're kept for historical reference:
-
-| File | Gen | What It Did | Why It Was Replaced |
-|------|-----|------------|-------------------|
-| `hough_detector.py` | 1 | Hough line detection for row angle | Too noisy, poor spacing accuracy |
-| `fft_detector.py` | 1 | 1D FFT angle sweep | Slow, replaced by 2D FFT |
-| `fft2d_detector.py` | 1 | 2D FFT standalone prototype | Absorbed into `vinerow/orientation/fft2d.py` |
-| `image_preprocessor.py` | 1 | ExG + CLAHE preprocessing | Replaced by multi-channel fusion in `vinerow/preprocessing/` |
-| `detect_rows.py` | 1 | Monolithic pipeline orchestrator | Replaced by modular `vinerow/pipeline.py` |
-| `row_locator.py` | 1 | Fixed-grid row position stamping | Replaced by adaptive candidate extraction + tracking |
-| `tile_fetcher.py` | 1 | Tile fetching (standalone) | Moved to `vinerow/acquisition/tile_fetcher.py` |
-| `geo_utils.py` | 1 | Geo coordinate utilities (standalone) | Moved to `vinerow/acquisition/geo_utils.py` |
-| `debug_visualizer.py` | 1 | Debug image generation | Replaced by `vinerow/debug/artifacts.py` |
-| `test_angle_conversion.py` | 1 | Unit test for angle conventions | One-off test, not needed |
-| `visual_verify_new.py` | - | Earlier draft of visual_verify.py | Superseded by `visual_verify.py` |
+Generation 1 files (hough_detector, fft_detector, detect_rows, etc.) were deleted during
+the standalone decoupling. They are recoverable from git tag `pre-decouple`.
