@@ -29,6 +29,7 @@ from vinerow.acquisition.tile_fetcher import (
     fetch_and_stitch,
 )
 from vinerow.config import PipelineConfig
+from vinerow.loaders.geojson_loader import load_geojson_block
 from vinerow.loaders.json_loader import load_test_blocks
 from vinerow.pipeline import run_pipeline
 
@@ -66,24 +67,6 @@ def angular_distance(a: float, b: float) -> float:
 # ---------------------------------------------------------------------------
 # Block loading
 # ---------------------------------------------------------------------------
-
-
-def load_geojson_block(path: str) -> dict:
-    """Load a block from a GeoJSON file."""
-    with open(path, "r", encoding="utf-8") as f:
-        geojson = json.load(f)
-    if geojson.get("type") == "FeatureCollection":
-        feature = geojson["features"][0]
-        geometry = feature["geometry"]
-    elif geojson.get("type") == "Feature":
-        geometry = geojson["geometry"]
-    else:
-        geometry = geojson
-    return {
-        "name": Path(path).stem,
-        "vineyard_name": "GeoJSON",
-        "boundary": geometry,
-    }
 
 
 # ---------------------------------------------------------------------------
