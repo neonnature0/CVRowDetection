@@ -141,6 +141,81 @@ def save_annotation(name: str, data: dict):
     return {"status": "saved"}
 
 
+@router.post("/{name}/prepare-blind")
+def prepare_blind_annotation(name: str):
+    """Create an annotation file with zero rows (for blind annotation).
+
+    The user will draw all rows from scratch in annotate.py without
+    seeing any pipeline output. This produces unbiased ground truth.
+    """
+    block = block_registry.get_block(name)
+    if block is None:
+        raise HTTPException(404, f"Block '{name}' not found")
+
+    ann_path = _annotation_path(name)
+
+    # Need the aerial image — either from detection cache or fetch fresh
+    src_image = DETECTIONS_DIR / f"{name}_image.png"
+    if not src_image.exists():
+        raise HTTPException(400, "Run detection first to cache the aerial image")
+
+    # Copy image + generate mask
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    dst_image = IMAGES_DIR / f"{name}.png"
+    dst_mask = IMAGES_DIR / f"{name}_mask.png"
+
+    if not dst_image.exists():
+        import shutil
+        shutil.copy2(str(src_image), str(dst_image))
+        img = cv2.imread(str(src_image))
+        if img is not None:
+            import numpy as np
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            mask = (gray > 0).astype(np.uint8) * 255
+            cv2.imwrite(str(dst_mask), mask)
+
+    h, w = 0, 0
+    img_check = cv2.imread(str(dst_image))
+    if img_check is not None:
+        h, w = img_check.shape[:2]
+
+    # Create annotation with ZERO rows (blind)
+    annotation = {
+        "block_name": name,
+        "vineyard_name": block.get("vineyard_name", ""),
+        "image_file": f"images/{name}.png",
+        "mask_file": f"images/{name}_mask.png",
+        "image_size": [w, h],
+        "meters_per_pixel": 0.0,
+        "angle_deg": 0.0,
+        "angle_source": "none",
+        "angle_modified": False,
+        "rows": [],  # Empty — user draws from scratch
+        "metadata": {
+            "status": "pending",
+            "annotator": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "modified_at": None,
+            "annotation_time_seconds": None,
+            "notes": "blind annotation — rows drawn from scratch without pipeline output",
+            "blind": True,
+        },
+        "ground_truth": {
+            "gt_spacing_m": block.get("row_spacing_m"),
+            "gt_row_count": block.get("row_count"),
+            "gt_row_angle_bearing": block.get("row_angle"),
+        },
+    }
+
+    with open(ann_path, "w", encoding="utf-8") as f:
+        json.dump(annotation, f, indent=2)
+    logger.info("Created blind annotation file for %s (0 rows)", name)
+
+    return {"status": "created", "blind": True, "rows": 0}
+
+
 @router.post("/{name}/launch-editor")
 def launch_editor(name: str):
     """Spawn annotate.py as a subprocess for this block.

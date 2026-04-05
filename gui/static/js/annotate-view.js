@@ -102,6 +102,21 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    async launchBlindEditor() {
+      const name = this.current.name;
+      this.state = 'editing';
+      try {
+        // Create blank annotation (no rows), then launch editor
+        await API.post('/api/annotations/' + name + '/prepare-blind');
+        const res = await API.post('/api/annotations/' + name + '/launch-editor');
+        this.editorMtime = res.mtime_before;
+        this.startEditorPoll(name);
+      } catch (e) {
+        this.state = 'ready';
+        alert('Failed to launch blind editor: ' + e.message);
+      }
+    },
+
     startEditorPoll(name) {
       this.stopEditorPoll();
       this.editorPollId = setInterval(async () => {
