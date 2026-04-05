@@ -59,6 +59,20 @@ TUNABLE_PARAMS = {
         "description": "Allowed deviation from tracked points (metres). Higher = smoother/straighter rows. Lower = follows curves more closely.",
         "stage": 6,
     },
+    "endpoint_trim_likelihood_ratio": {
+        "type": "slider", "min": 0.1, "max": 0.7, "step": 0.05,
+        "default": 0.3,
+        "label": "Endpoint Trim Ratio",
+        "description": "Threshold for trimming weak row tails. Higher = more aggressive trimming, rows end closer to vine canopy. Lower = rows extend further past vines.",
+        "stage": 6,
+    },
+    "endpoint_trim_min_run": {
+        "type": "slider", "min": 1, "max": 6, "step": 1,
+        "default": 3,
+        "label": "Endpoint Trim Run",
+        "description": "Consecutive weak strips needed before trimming kicks in. Lower = trim faster at row ends. Higher = more tolerant of noisy tails.",
+        "stage": 6,
+    },
     "min_row_confidence": {
         "type": "slider", "min": 0.0, "max": 0.50, "step": 0.01,
         "default": 0.15,
