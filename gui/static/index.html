@@ -24,6 +24,8 @@
   <script src="/js/lightbox.js"></script>
   <script src="/js/library-view.js"></script>
   <script src="/js/annotate-view.js"></script>
+  <script src="/js/train-view.js"></script>
+  <script src="/js/verify-view.js"></script>
 </head>
 
 <body x-data x-init="$store.app.init()">
@@ -200,14 +202,166 @@
       </div>
     </div>
 
-    <!-- Train View (placeholder) -->
-    <div x-show="$store.app.view === 'train'" class="placeholder-view">
-      Training view — coming in Phase 3
+    <!-- Train View -->
+    <div x-show="$store.app.view === 'train'" class="train-container" x-data="trainView">
+      <div class="train-panel">
+        <h2>ML Training</h2>
+
+        <!-- Stats -->
+        <div class="train-stats" x-show="stats">
+          <div class="stat-item">
+            <span class="stat-value" x-text="stats ? stats.annotated_blocks : 0"></span>
+            <span class="stat-label">Annotated blocks</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value" x-text="stats && stats.model ? stats.model.size_mb + ' MB' : 'None'"></span>
+            <span class="stat-label">Current model</span>
+          </div>
+        </div>
+
+        <!-- Idle -->
+        <template x-if="state === 'idle'">
+          <div class="train-actions">
+            <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 12px;">
+              Step 1: Generate training patches from completed annotations.<br>
+              Step 2: Train the U-Net model.
+            </p>
+            <button class="btn btn-primary" @click="generate()" style="width: 100%; margin-bottom: 8px;">
+              Generate Training Data
+            </button>
+            <button class="btn btn-success" @click="startTraining()" style="width: 100%;"
+                    :disabled="!stats || stats.annotated_blocks === 0">
+              Start Training
+            </button>
+          </div>
+        </template>
+
+        <!-- Generating -->
+        <template x-if="state === 'generating'">
+          <div style="text-align: center; padding: 24px 0;">
+            <div class="spinner"></div>
+            <p style="color: var(--text-muted); margin-top: 12px;">Generating training patches...</p>
+          </div>
+        </template>
+
+        <!-- Training in progress -->
+        <template x-if="state === 'training'">
+          <div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" :style="'width:' + progressPct + '%'"></div>
+            </div>
+            <div class="train-metrics" x-show="progress">
+              <div class="metric">
+                <span class="metric-label">Epoch</span>
+                <span x-text="progress ? progress.epoch + ' / ' + progress.total_epochs : ''"></span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Train Loss</span>
+                <span x-text="progress ? progress.train_loss : ''"></span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Val Dice</span>
+                <span x-text="progress ? progress.val_dice : ''"></span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Best Dice</span>
+                <span style="color: var(--success);" x-text="progress ? progress.best_dice : ''"></span>
+              </div>
+            </div>
+            <button class="btn btn-danger" style="width: 100%; margin-top: 12px;" @click="stopTraining()">
+              Stop Training
+            </button>
+          </div>
+        </template>
+
+        <!-- Complete -->
+        <template x-if="state === 'complete'">
+          <div style="text-align: center;">
+            <p style="color: var(--success); font-size: 16px; margin-bottom: 8px;">Training Complete</p>
+            <div class="train-metrics" x-show="progress">
+              <div class="metric">
+                <span class="metric-label">Final Best Dice</span>
+                <span style="color: var(--success); font-weight: 600;" x-text="progress ? progress.best_dice : ''"></span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Epochs</span>
+                <span x-text="progress ? progress.epoch : ''"></span>
+              </div>
+            </div>
+            <button class="btn btn-warning" style="width: 100%; margin-top: 16px;" @click="invalidateAll()">
+              Clear All Detections (Re-detect with new model)
+            </button>
+            <button class="btn btn-secondary" style="width: 100%; margin-top: 8px;" @click="reset()">
+              Back
+            </button>
+          </div>
+        </template>
+
+        <!-- Error -->
+        <template x-if="state === 'error'">
+          <div style="text-align: center;">
+            <p style="color: var(--danger);" x-text="errorMsg"></p>
+            <button class="btn btn-secondary" style="margin-top: 12px;" @click="reset()">Back</button>
+          </div>
+        </template>
+      </div>
     </div>
 
-    <!-- Verify View (placeholder) -->
-    <div x-show="$store.app.view === 'verify'" class="placeholder-view">
-      Verification view — coming in Phase 3
+    <!-- Verify View -->
+    <div x-show="$store.app.view === 'verify'" class="verify-container" x-data="verifyView">
+      <div class="verify-toolbar">
+        <span style="font-weight: 600;">Visual Verification</span>
+        <label style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+          Blocks:
+          <input type="number" x-model.number="n" min="1" max="100"
+                 style="width: 50px; padding: 4px; background: var(--bg-card); color: var(--text);
+                        border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
+        </label>
+        <button class="btn btn-primary btn-sm" @click="startVerify()"
+                :disabled="state === 'running'">
+          <span x-text="state === 'running' ? 'Running...' : 'Run Verify'"></span>
+        </button>
+        <template x-if="state === 'running'">
+          <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+            <div class="progress-bar-container" style="flex: 1; height: 8px;">
+              <div class="progress-bar" :style="'width:' + progressPct + '%'"></div>
+            </div>
+            <span style="font-size: 11px; color: var(--text-muted);"
+                  x-text="progress.done + '/' + progress.total"></span>
+          </div>
+        </template>
+      </div>
+
+      <!-- Results grid -->
+      <div class="verify-grid" x-show="results.length > 0">
+        <template x-for="r in results" :key="r.name">
+          <div class="verify-card">
+            <div class="card-thumb" @click="r.overlay_url && $store.lightbox.open(r.overlay_url)">
+              <template x-if="r.overlay_url">
+                <img :src="r.overlay_url" alt="overlay" loading="lazy">
+              </template>
+              <template x-if="!r.overlay_url">
+                <div class="card-thumb-empty" x-text="r.error || 'Failed'"></div>
+              </template>
+            </div>
+            <div class="verify-info">
+              <span class="name" x-text="r.name"></span>
+              <span style="font-size: 11px; color: var(--text-muted);"
+                    x-text="r.row_count + ' rows'"></span>
+              <span style="font-size: 11px; color: var(--text-muted);"
+                    x-text="r.spacing_m + 'm'"></span>
+              <span style="font-size: 11px;"
+                    :style="'color:' + (r.confidence >= 0.7 ? 'var(--success)' : r.confidence >= 0.4 ? 'var(--warning)' : 'var(--danger)')"
+                    x-text="Math.round(r.confidence * 100) + '%'"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Empty state -->
+      <div x-show="state === 'idle' && results.length === 0" class="placeholder-view">
+        Click "Run Verify" to check detection quality on random blocks.
+      </div>
     </div>
 
   </main>

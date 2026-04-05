@@ -152,6 +152,12 @@ def save_training_curves(
     plt.close(fig)
 
 
+def _write_progress(output_dir: Path, data: dict):
+    """Write training progress JSON for GUI consumption."""
+    progress_file = output_dir / "training_progress.json"
+    progress_file.write_text(json.dumps(data), encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train row likelihood U-Net")
     parser.add_argument("--data-dir", type=str, default="dataset/training")
@@ -273,6 +279,14 @@ def main():
             flush=True,
         )
 
+        # Write progress JSON for GUI consumption
+        _write_progress(output_dir, {
+            "epoch": epoch, "total_epochs": args.epochs,
+            "train_loss": round(train_loss, 4), "val_loss": round(val_loss, 4),
+            "val_dice": round(val_dice, 4), "best_dice": round(best_dice, 4),
+            "lr": lr, "elapsed_s": round(elapsed, 1), "status": "running",
+        })
+
         if patience_counter >= args.patience:
             print(f"\nEarly stopping at epoch {epoch} (no improvement for {args.patience} epochs)", flush=True)
             break
@@ -296,6 +310,15 @@ def main():
     }
     with open(output_dir / "training_config.json", "w") as f:
         json.dump(config, f, indent=2)
+
+    _write_progress(output_dir, {
+        "epoch": len(train_losses), "total_epochs": args.epochs,
+        "train_loss": round(train_losses[-1], 4) if train_losses else 0,
+        "val_loss": round(val_losses[-1], 4) if val_losses else 0,
+        "val_dice": round(val_dices[-1], 4) if val_dices else 0,
+        "best_dice": round(best_dice, 4),
+        "status": "complete",
+    })
 
     print(f"\nTraining complete. Best val Dice: {best_dice:.4f}")
     print(f"Checkpoints saved to: {output_dir}")
