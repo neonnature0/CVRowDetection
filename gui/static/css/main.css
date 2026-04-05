@@ -129,6 +129,25 @@ main { flex: 1; position: relative; overflow: hidden; }
 .card-actions { display: flex; gap: 4px; padding: 0 10px 10px; }
 .card-expanded { padding: 8px; background: #111; }
 
+/* ── Lightbox (full-screen zoom/pan viewer) ── */
+[x-cloak] { display: none !important; }
+.lightbox-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex; flex-direction: column; cursor: grab;
+}
+.lightbox-toolbar {
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.lightbox-content {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; transform-origin: center center;
+}
+.lightbox-content img {
+  max-width: none; max-height: none; user-select: none; pointer-events: none;
+}
+
 /* ── Placeholder views ── */
 .placeholder-view {
   display: flex; align-items: center; justify-content: center;

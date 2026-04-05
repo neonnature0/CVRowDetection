@@ -43,11 +43,12 @@ async def run_detection(name: str, force: bool = False):
     # Cache everything
     detection_cache.save_result(name, result, image_bgr, overlay, thumbnail)
 
-    # Update block stage
+    # Update block stage (set to 'detected' unless already further along)
     updates = {
         "last_detection_at": datetime.now(timezone.utc).isoformat(),
     }
-    if block.get("stage") == "draft":
+    current_stage = block.get("stage") or "draft"
+    if current_stage in ("draft", None, ""):
         updates["stage"] = "detected"
     block_registry.update_block(name, updates)
 

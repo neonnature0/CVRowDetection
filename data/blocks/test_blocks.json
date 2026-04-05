@@ -226,7 +226,9 @@
       "row_orientation": "N-S",
       "row_angle": null,
       "row_count": 26,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "last_detection_at": "2026-04-05T18:38:55.735349+00:00",
+      "stage": "detected"
     },
     {
       "name": "a2e04e",
@@ -902,7 +904,9 @@
       "row_orientation": "N-S",
       "row_angle": null,
       "row_count": 82,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "last_detection_at": "2026-04-05T18:40:24.937349+00:00",
+      "stage": "detected"
     },
     {
       "name": "89d152",
@@ -1802,7 +1806,8 @@
       "row_orientation": "N-S",
       "row_angle": 176.5132114763256,
       "row_count": 110,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "stage": "draft"
     },
     {
       "name": "09daf1",
@@ -2710,7 +2715,8 @@
       "row_orientation": "N-S",
       "row_angle": 176.03597049556237,
       "row_count": 111,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "stage": "draft"
     },
     {
       "name": "34397e",
@@ -3610,7 +3616,8 @@
       "row_orientation": "N-S",
       "row_angle": 175.87316911955202,
       "row_count": 110,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "stage": "draft"
     },
     {
       "name": "a32f5d",
@@ -5638,7 +5645,8 @@
       "row_orientation": "N-S",
       "row_angle": 176.43699814111667,
       "row_count": 251,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "stage": "draft"
     },
     {
       "name": "255c13",
@@ -7970,7 +7978,8 @@
       "row_orientation": "N-S",
       "row_angle": 176.43081741032307,
       "row_count": 289,
-      "account_slug": "cbrands-brooklands"
+      "account_slug": "cbrands-brooklands",
+      "stage": "draft"
     },
     {
       "name": "341dca",
@@ -8782,7 +8791,8 @@
       "row_orientation": "E-W",
       "row_angle": 82.85392250739567,
       "row_count": 99,
-      "account_slug": "cbrands-other-vineyard"
+      "account_slug": "cbrands-other-vineyard",
+      "stage": "draft"
     },
     {
       "name": "7a4529",
@@ -8862,7 +8872,8 @@
       "row_orientation": "N-S",
       "row_angle": 0.11862493673262975,
       "row_count": 39,
-      "account_slug": "canadatest"
+      "account_slug": "canadatest",
+      "stage": "draft"
     },
     {
       "name": "527b6f",
@@ -8990,7 +9001,8 @@
       "row_orientation": "N-S",
       "row_angle": 179.80675745522015,
       "row_count": 61,
-      "account_slug": "canadatest"
+      "account_slug": "canadatest",
+      "stage": "draft"
     },
     {
       "name": "1310ae",
@@ -9157,7 +9169,8 @@
             ]
           ]
         ]
-      }
+      },
+      "stage": "draft"
     },
     {
       "name": "592347",
@@ -9224,7 +9237,8 @@
             ]
           ]
         ]
-      }
+      },
+      "stage": "draft"
     }
   ]
 }

@@ -24,7 +24,7 @@ def _annotation_path(name: str) -> Path:
 def get_annotation_queue():
     """List blocks that need annotation (stage is 'detected' — detection done but not annotated)."""
     blocks = block_registry.list_blocks()
-    queue = [b for b in blocks if b.get("stage") in ("detected", None, "draft")]
+    queue = [b for b in blocks if b.get("stage") == "detected"]
     return queue
 
 
