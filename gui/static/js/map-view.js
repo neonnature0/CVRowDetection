@@ -1,17 +1,13 @@
 /**
- * Map View — MapLibre GL + polygon drawing for adding blocks.
- *
- * Initialised when the #map view becomes active. Uses mapbox-gl-draw
- * (compatible with MapLibre) for polygon creation.
+ * Map View — MapLibre GL + Terra Draw for adding block polygons.
  */
 
 let _map = null;
-let _draw = null;
+let _drawControl = null;
 const BLOCK_SOURCE = 'existing-blocks';
 const BLOCK_FILL_LAYER = 'blocks-fill';
 const BLOCK_LINE_LAYER = 'blocks-outline';
 
-// Stage → color mapping
 const STAGE_COLORS = {
   draft:     'rgba(150, 150, 150, 0.25)',
   detected:  'rgba(96, 165, 250, 0.25)',
@@ -28,7 +24,7 @@ const STAGE_LINE_COLORS = {
 };
 
 function initMap() {
-  if (_map) return; // already initialised
+  if (_map) return;
 
   _map = new maplibregl.Map({
     container: 'map-container',
@@ -49,43 +45,47 @@ function initMap() {
         source: 'linz-aerial',
       }],
     },
-    center: [173.95, -41.51],  // Marlborough
+    center: [173.95, -41.51],
     zoom: 14,
   });
 
-  // Drawing tool
-  _draw = new MapboxDraw({
-    displayControlsDefault: false,
-    controls: { polygon: true, trash: true },
-    defaultMode: 'simple_select',
+  // Terra Draw control for polygon drawing
+  _drawControl = new MaplibreTerradrawControl.MaplibreTerradrawControl({
+    modes: ['polygon', 'select', 'delete-selection'],
+    open: true,
   });
-  _map.addControl(_draw, 'top-left');
+  _map.addControl(_drawControl, 'top-left');
   _map.addControl(new maplibregl.NavigationControl(), 'top-left');
 
-  // Enable save button when a polygon is drawn
-  _map.on('draw.create', updateSaveButton);
-  _map.on('draw.delete', updateSaveButton);
-  _map.on('draw.update', updateSaveButton);
-
-  // Load existing blocks once map is ready
   _map.on('load', () => {
     addBlockLayers();
     refreshBlockOverlays();
+
+    // Poll for drawn features to enable save button
+    // Terra Draw doesn't fire events the same way as MapboxDraw,
+    // so we check periodically when the draw control exists
+    setInterval(updateSaveButton, 1000);
   });
 
-  // Wire up save button
   document.getElementById('save-block-btn').addEventListener('click', saveDrawnBlock);
 }
 
 function updateSaveButton() {
-  const features = _draw.getAll().features;
-  const hasPolygon = features.some(f => f.geometry.type === 'Polygon');
-  document.getElementById('save-block-btn').disabled = !hasPolygon;
+  if (!_drawControl) return;
+  try {
+    const features = _drawControl.getFeatures();
+    const hasPolygon = features && features.some(f => f.geometry && f.geometry.type === 'Polygon');
+    document.getElementById('save-block-btn').disabled = !hasPolygon;
+  } catch (e) {
+    // Draw control may not be ready yet
+  }
 }
 
 async function saveDrawnBlock() {
-  const features = _draw.getAll().features;
-  const polygon = features.find(f => f.geometry.type === 'Polygon');
+  if (!_drawControl) return;
+
+  const features = _drawControl.getFeatures();
+  const polygon = features.find(f => f.geometry && f.geometry.type === 'Polygon');
   if (!polygon) return;
 
   const btn = document.getElementById('save-block-btn');
@@ -94,9 +94,11 @@ async function saveDrawnBlock() {
 
   try {
     await API.post('/api/blocks', { boundary: polygon.geometry });
-    // Clear drawn polygon
-    _draw.deleteAll();
-    // Refresh
+    // Clear drawn features
+    const ids = features.map(f => f.id).filter(Boolean);
+    ids.forEach(id => {
+      try { _drawControl.removeFeatures([id]); } catch (_) {}
+    });
     await Alpine.store('app').refreshBlocks();
     refreshBlockOverlays();
     renderSidebarList();
@@ -110,13 +112,11 @@ async function saveDrawnBlock() {
 }
 
 function addBlockLayers() {
-  // GeoJSON source for existing blocks
   _map.addSource(BLOCK_SOURCE, {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] },
   });
 
-  // Fill layer (transparent, stage-colored)
   _map.addLayer({
     id: BLOCK_FILL_LAYER,
     type: 'fill',
@@ -132,7 +132,6 @@ function addBlockLayers() {
     },
   });
 
-  // Outline layer
   _map.addLayer({
     id: BLOCK_LINE_LAYER,
     type: 'line',
@@ -149,7 +148,6 @@ function addBlockLayers() {
     },
   });
 
-  // Popup on click
   _map.on('click', BLOCK_FILL_LAYER, (e) => {
     const props = e.features[0].properties;
     const popup = new maplibregl.Popup({ closeButton: true, maxWidth: '200px' })
@@ -186,7 +184,6 @@ function refreshBlockOverlays() {
 function renderSidebarList() {
   const container = document.getElementById('sidebar-block-list');
   if (!container) return;
-  // Clear existing content
   container.replaceChildren();
 
   const blocks = Alpine.store('app').blocks;
@@ -230,23 +227,18 @@ async function deleteBlock(name) {
   }
 }
 
-// ── Lifecycle: init map after DOM is ready ──
+// ── Lifecycle ──
 
-// Alpine's defer means it loads after DOMContentLoaded, so we listen for its init event
 document.addEventListener('alpine:init', () => {
-  // Watch for view changes to resize the map when it becomes visible
   Alpine.effect(() => {
     const view = Alpine.store('app').view;
     if (view === 'map' && _map) {
-      // MapLibre needs a resize after container becomes visible
       setTimeout(() => _map.resize(), 50);
     }
   });
 });
 
-// Init map on first DOMContentLoaded — container exists because we use x-show not x-if
 document.addEventListener('DOMContentLoaded', () => {
-  // Wait for Alpine to process x-show, then init
   setTimeout(() => {
     initMap();
     renderSidebarList();
