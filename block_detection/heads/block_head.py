@@ -20,8 +20,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from detection.config import DetectionConfig
-from detection.types import BlockDetection
+from block_detection.config import DetectionConfig
+from block_detection.types import BlockDetection
 
 logger = logging.getLogger(__name__)
 

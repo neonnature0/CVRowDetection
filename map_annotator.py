@@ -510,8 +510,8 @@ class AnnotatorHandler(SimpleHTTPRequestHandler):
 
     def _handle_detect(self, body):
         """Run block detection on the viewport area."""
-        encoder_path = Path(__file__).parent / "detection" / "checkpoints" / "encoder.pth"
-        head_path = Path(__file__).parent / "detection" / "checkpoints" / "block_head.pth"
+        encoder_path = Path(__file__).parent / "block_detection" / "checkpoints" / "encoder.pth"
+        head_path = Path(__file__).parent / "block_detection" / "checkpoints" / "block_head.pth"
 
         if not encoder_path.exists() or not head_path.exists():
             self._json({"ok": False, "error": "No trained model found. Click Train Model first."})
@@ -557,7 +557,7 @@ class AnnotatorHandler(SimpleHTTPRequestHandler):
             logger.info("Detection: image %dx%d", image.shape[1], image.shape[0])
 
             # Run model
-            from detection.predict_blocks import predict_blocks
+            from block_detection.predict_blocks import predict_blocks
             result = predict_blocks(image, str(encoder_path), str(head_path),
                                     tile_origin=tile_origin, zoom=zoom, tile_size=source.tile_size)
 

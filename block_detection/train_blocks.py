@@ -7,9 +7,9 @@ Follows the same structure as training/train.py with key additions:
   - Separate encoder/head checkpoints
 
 Usage:
-    python -m detection.train_blocks
-    python -m detection.train_blocks --epochs 50 --batch-size 4 --freeze-epochs 10
-    python -m detection.train_blocks --run-test --checkpoint-dir detection/checkpoints
+    python -m block_detection.train_blocks
+    python -m block_detection.train_blocks --epochs 50 --batch-size 4 --freeze-epochs 10
+    python -m block_detection.train_blocks --run-test --checkpoint-dir block_detection/checkpoints
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ import torch.nn as nn
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import DataLoader, Dataset
 
-from detection.config import DetectionConfig
-from detection.encoder import SharedEncoder, save_encoder
-from detection.heads.block_head import BlockDetectionHead, BlockDetector, save_head
+from block_detection.config import DetectionConfig
+from block_detection.encoder import SharedEncoder, save_encoder
+from block_detection.heads.block_head import BlockDetectionHead, BlockDetector, save_head
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ def main():
     parser.add_argument("--freeze-epochs", type=int, default=5, help="Epochs to freeze encoder")
     parser.add_argument("--patience", type=int, default=20)
     parser.add_argument("--encoder", type=str, default="mobilenet_v2")
-    parser.add_argument("--output-dir", type=str, default="detection/checkpoints")
+    parser.add_argument("--output-dir", type=str, default="block_detection/checkpoints")
     parser.add_argument("--max-patches", type=int, default=None, help="Limit training patches (faster iteration)")
     parser.add_argument("--run-test", action="store_true", help="Test mode only")
     parser.add_argument("--checkpoint-dir", type=str, default=None, help="Checkpoint dir for test mode")
