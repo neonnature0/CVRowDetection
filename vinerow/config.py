@@ -30,10 +30,7 @@ class PipelineConfig:
     ml_align_rows: bool = False     # rotate image to align rows vertically before ML inference
     ml_decoder: str = "fpn"         # "unet" or "fpn"
 
-    # --- Row detection method ---
-    row_detection_method: str = "global_profile"  # "global_profile" (new) or "tracker" (old strip-based)
-
-    # --- Candidate extraction (Stage 4, tracker method only) ---
+    # --- Candidate extraction (Stage 4) ---
     strip_width_factor: float = 3.0     # strip width = factor * spacing_px
     strip_overlap: float = 0.5          # fraction overlap between adjacent strips
     peak_min_distance_factor: float = 0.80  # min distance between peaks = factor * spacing_px
