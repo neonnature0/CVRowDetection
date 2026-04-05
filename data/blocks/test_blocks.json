@@ -1,8 +1,8 @@
 {
   "blocks": [
     {
-      "name": "Block A",
-      "vineyard_name": "Brooklands",
+      "name": "ee8ff5",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -229,8 +229,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "Block B",
-      "vineyard_name": "Brooklands",
+      "name": "a2e04e",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -905,8 +905,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "Block C",
-      "vineyard_name": "Brooklands",
+      "name": "89d152",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -1805,8 +1805,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "Block D",
-      "vineyard_name": "Brooklands",
+      "name": "09daf1",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -2713,8 +2713,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "Block D2",
-      "vineyard_name": "Brooklands",
+      "name": "34397e",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -3613,8 +3613,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "North Block",
-      "vineyard_name": "Opawa",
+      "name": "a32f5d",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -5641,8 +5641,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "South Block",
-      "vineyard_name": "Opawa",
+      "name": "255c13",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -7973,8 +7973,8 @@
       "account_slug": "cbrands-brooklands"
     },
     {
-      "name": "Block A",
-      "vineyard_name": "Other Vineyard",
+      "name": "341dca",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -8785,8 +8785,8 @@
       "account_slug": "cbrands-other-vineyard"
     },
     {
-      "name": "B10",
-      "vineyard_name": "The View",
+      "name": "7a4529",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -8865,8 +8865,8 @@
       "account_slug": "canadatest"
     },
     {
-      "name": "B12",
-      "vineyard_name": "The View",
+      "name": "527b6f",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -8993,8 +8993,8 @@
       "account_slug": "canadatest"
     },
     {
-      "name": "Main Block",
-      "vineyard_name": "Babich Henderson",
+      "name": "1310ae",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
@@ -9160,8 +9160,8 @@
       }
     },
     {
-      "name": "Block2",
-      "vineyard_name": "Babich Henderson",
+      "name": "592347",
+      "vineyard_name": "",
       "boundary": {
         "type": "Polygon",
         "coordinates": [
