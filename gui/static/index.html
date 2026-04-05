@@ -381,8 +381,11 @@
     <div class="tune-header">
       <span style="font-weight: 600;">Tune Parameters</span>
       <span class="name" x-text="blockName"></span>
-      <button class="btn btn-secondary btn-sm" style="margin-left: auto;" @click="resetToDefaults()">
-        Reset Defaults
+      <button class="btn btn-secondary btn-sm" style="margin-left: auto;" @click="resetToSavedConfig()">
+        Reset Saved
+      </button>
+      <button class="btn btn-secondary btn-sm" @click="resetToTrueDefaults()">
+        True Defaults
       </button>
       <button class="btn btn-danger btn-sm" @click="blockName = null">Close</button>
     </div>

@@ -31,11 +31,33 @@ document.addEventListener('alpine:init', () => {
     },
 
     resetToDefaults() {
+      // Set all params to PipelineConfig defaults
       if (!this.paramDefs) return;
       this.params = {};
       for (const [key, def] of Object.entries(this.paramDefs)) {
         this.params[key] = def.default;
       }
+    },
+
+    async resetToSavedConfig() {
+      // Reset to saved per-block tuned config (if any), otherwise defaults
+      this.resetToDefaults();
+      if (!this.blockName) return;
+      try {
+        const saved = await API.get('/api/detection/' + this.blockName + '/tuned-config');
+        if (saved && Object.keys(saved).length > 0) {
+          for (const [key, val] of Object.entries(saved)) {
+            if (key in this.params) this.params[key] = val;
+          }
+        }
+      } catch (_) {}
+    },
+
+    resetToTrueDefaults() {
+      // Reset to PipelineConfig dataclass defaults, ignoring any saved config
+      this.resetToDefaults();
+      this.tunedResult = null;
+      this.state = 'idle';
     },
 
     async loadBlockConfig(name) {
