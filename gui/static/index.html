@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CVRowDetection</title>
+
+  <!-- Alpine.js (no build step) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- MapLibre GL JS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <!-- MapLibre Draw (for polygon drawing) -->
+  <link rel="stylesheet" href="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.css">
+  <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.js"></script>
+
+  <!-- App -->
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+  <script src="/js/map-view.js"></script>
+</head>
+
+<body x-data x-init="$store.app.init()">
+
+  <!-- Navigation -->
+  <nav>
+    <span class="brand">CVRowDetection</span>
+    <a href="#map"      :class="{ active: $store.app.view === 'map' }">Add Blocks</a>
+    <a href="#annotate" :class="{ active: $store.app.view === 'annotate' }">Annotate</a>
+    <a href="#library"  :class="{ active: $store.app.view === 'library' }">Library</a>
+    <a href="#train"    :class="{ active: $store.app.view === 'train' }">Train</a>
+    <a href="#verify"   :class="{ active: $store.app.view === 'verify' }">Verify</a>
+  </nav>
+
+  <!-- Main content area -->
+  <main>
+
+    <!-- Map View (Add Blocks) -->
+    <template x-if="$store.app.view === 'map'">
+      <div style="display: flex; height: 100%;">
+        <div id="map-container" style="flex: 1;"></div>
+        <div class="map-sidebar">
+          <h3>Blocks</h3>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+            Draw a polygon on the map, then click <b>Save Block</b>.
+          </div>
+          <button class="btn btn-primary" style="width: 100%;" id="save-block-btn" disabled>
+            Save Block
+          </button>
+          <div id="sidebar-block-list" style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px;">
+            <!-- Populated by map-view.js -->
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Annotate View (placeholder) -->
+    <template x-if="$store.app.view === 'annotate'">
+      <div class="placeholder-view">Annotate view — coming in Phase 2</div>
+    </template>
+
+    <!-- Library View (placeholder) -->
+    <template x-if="$store.app.view === 'library'">
+      <div class="placeholder-view">Library view — coming in Phase 2</div>
+    </template>
+
+    <!-- Train View (placeholder) -->
+    <template x-if="$store.app.view === 'train'">
+      <div class="placeholder-view">Training view — coming in Phase 3</div>
+    </template>
+
+    <!-- Verify View (placeholder) -->
+    <template x-if="$store.app.view === 'verify'">
+      <div class="placeholder-view">Verification view — coming in Phase 3</div>
+    </template>
+
+  </main>
+
+</body>
+</html>

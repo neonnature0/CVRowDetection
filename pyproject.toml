@@ -1,3 +1,15 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["vinerow", "vinerow.loaders", "vinerow.acquisition", "vinerow.preprocessing",
+            "vinerow.orientation", "vinerow.ridge", "vinerow.candidates", "vinerow.tracking",
+            "vinerow.fitting", "vinerow.detection", "vinerow.postprocessing", "vinerow.debug",
+            "gui", "gui.routers", "gui.services",
+            "block_detection", "block_detection.heads",
+            "training"]
+
 [project]
 name = "cvrowdetection"
 version = "1.0.0"
@@ -27,6 +39,10 @@ ml = [
 dev = [
     "pytest>=7.0.0",
     "ruff>=0.4.0",
+]
+gui = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
 ]
 
 [project.scripts]

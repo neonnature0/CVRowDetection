@@ -1,20 +1,29 @@
-# GUI (Planned)
+# CVRowDetection GUI
 
-Interactive frontend for the CVRowDetection pipeline.
+Browser-based interface for the full row detection workflow: draw block boundaries, run detection, annotate rows, train ML model, and verify results.
 
-## Planned Features
+## Setup
 
-- Draw vineyard block boundaries (AOIs) on a map
-- Trigger row detection pipeline on selected blocks
-- Review detection results as overlays on aerial imagery
-- Adjust/correct detected rows interactively
-- Export results as GeoJSON
+```bash
+pip install ".[gui]"
+```
 
-## Architecture Notes
+## Usage
 
-The GUI will consume the `vinerow` package as a library. Block data flows
-through the `vinerow.loaders.BlockLoader` protocol — the GUI will implement
-its own loader that passes user-drawn polygons directly to the pipeline.
+```bash
+python -m gui.server
+```
 
-`map_annotator.py` in the project root is a prototype of this concept
-(Leaflet-based web UI served from Python).
+Opens `http://127.0.0.1:8765` in your browser.
+
+## Local-display constraint
+
+The annotation editor launches `annotate.py` (matplotlib) as a subprocess in a separate OS window. This requires the server to run on the same machine as the user — it will not work over a remote/headless connection.
+
+## Sections
+
+1. **Add Blocks** — Draw vineyard block boundaries on a MapLibre map
+2. **Annotate** — Sequential workflow: detect rows, accept or edit, advance
+3. **Library** — Browse all blocks, re-detect, annotate, delete
+4. **Train** — Generate training data and train the ML model
+5. **Verify** — Batch visual verification on random blocks
