@@ -50,5 +50,8 @@ results.csv
 # Research papers / references
 relevant_research/
 
+# Experimental block boundary detection (not integrated with main pipeline)
+block_detection/
+
 # Thesis draft
 thesis_text.txt
