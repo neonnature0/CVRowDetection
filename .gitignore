@@ -1,14 +1,51 @@
-dataset/
-output/
-venv/
-venv_314_backup/
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+
+# Virtual environments
+venv/
+venv_314_backup/
+.venv/
+
+# Environment and secrets
 .env
+
+# Editor / IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Node (if applicable)
+node_modules/
+
+# Model weights
 *.pt
-models/*.pth
+*.pth
+*.ckpt
+*.onnx
+
+# Training checkpoints
 training/checkpoints/
 training/checkpoints_aligned/
 training/checkpoints_fpn/
+block_detection/checkpoints/
 
-relevant_research/*.pdf
+# Data — real imagery, annotations, detection output
+dataset/
+output/
+
+# Local block data (user's real blocks, not shipped)
+*.local.json
+
+# Internal development files
+HANDOVER.md
+ablation.csv
+results.csv
+
+# Research papers / references
+relevant_research/
