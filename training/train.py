@@ -377,9 +377,9 @@ def _run_temperature_calibration(model, cal_loader, output_dir, device):
     all_logits = []
     all_targets = []
     with torch.no_grad():
-        for batch in cal_loader:
-            images = batch["image"].to(device)
-            targets = batch["target"].to(device)
+        for images, targets in cal_loader:
+            images = images.to(device)
+            targets = targets.to(device)
             logits = model(images)
             all_logits.append(logits.cpu())
             all_targets.append(targets.cpu())
