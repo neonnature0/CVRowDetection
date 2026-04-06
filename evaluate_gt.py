@@ -675,17 +675,20 @@ def main():
             from tracking.hooks import build_run_record, build_block_records
             from tracking.storage import append_run, append_block_results
 
-            # Build difficulty map from block registry if available
+            # Build difficulty and region maps from block registry if available
             difficulty_map = {}
+            region_map = {}
             try:
                 blocks = _load_test_blocks()
                 difficulty_map = {b["name"]: b.get("difficulty_rating") for b in blocks}
+                region_map = {b["name"]: b.get("region") for b in blocks}
             except Exception:
                 pass
 
             record = build_run_record(
                 run_type="evaluation",
                 eval_results=results,
+                block_region_map=region_map,
             )
             append_run(record)
 
@@ -693,6 +696,7 @@ def main():
                 run_id=record["run_id"],
                 eval_results=results,
                 block_difficulty_map=difficulty_map,
+                block_region_map=region_map,
             )
             append_block_results(block_records)
             print(f"  Tracking: recorded run {record['run_id']} ({len(results)} blocks)")

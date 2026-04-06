@@ -33,6 +33,7 @@ def build_run_record(
     notes: str | None = None,
     per_row_confidences: list[float] | None = None,
     per_row_correctness: list[bool] | None = None,
+    block_region_map: dict[str, str | None] | None = None,
 ) -> dict:
     """Build a complete run record from evaluation results.
 
@@ -104,6 +105,11 @@ def build_run_record(
             "mean_f1_01": _ci_to_list(bootstrap_confidence_interval(f1_01)),
         }
 
+    # Compute per-region metrics
+    per_region = None
+    if eval_results and block_region_map:
+        per_region = _compute_per_region_metrics(eval_results, block_region_map)
+
     record = {
         "run_id": run_id,
         "timestamp": now.isoformat(),
@@ -119,6 +125,7 @@ def build_run_record(
         "notes": notes,
         "aggregate_metrics": aggregate,
         "bootstrap_ci_95": bootstrap_ci,
+        "per_region_metrics": per_region,
     }
 
     return record
@@ -129,6 +136,7 @@ def build_block_records(
     eval_results: list,
     block_difficulty_map: dict[str, int | None] | None = None,
     block_blind_map: dict[str, bool] | None = None,
+    block_region_map: dict[str, str | None] | None = None,
 ) -> list[dict]:
     """Build per-block result records from EvalResult list.
 
@@ -142,6 +150,8 @@ def build_block_records(
         block_difficulty_map = {}
     if block_blind_map is None:
         block_blind_map = {}
+    if block_region_map is None:
+        block_region_map = {}
 
     records = []
     now = datetime.now(timezone.utc)
@@ -167,9 +177,46 @@ def build_block_records(
             "ece": None,  # per-block ECE not computed here
             "is_blind_annotation": r.is_blind or block_blind_map.get(r.block, False),
             "difficulty_rating": block_difficulty_map.get(r.block),
+            "region": block_region_map.get(r.block),
         })
 
     return records
+
+
+def _compute_per_region_metrics(
+    eval_results: list,
+    block_region_map: dict[str, str | None],
+) -> dict:
+    """Group eval results by region and compute per-region aggregate metrics.
+
+    Regions with zero blocks are omitted. No bootstrap CIs — per-region
+    sample sizes are too small for them to be meaningful.
+    """
+    from collections import defaultdict
+
+    by_region: dict[str, list] = defaultdict(list)
+    for r in eval_results:
+        region = block_region_map.get(r.block)
+        if region:
+            by_region[region].append(r)
+
+    per_region = {}
+    for region, results in by_region.items():
+        f1_04 = [r.f1 for r in results]
+        f1_02 = [r.f1_medium for r in results]
+        f1_01 = [r.f1_strict for r in results]
+        worst_idx = int(np.argmin(f1_04))
+
+        per_region[region] = {
+            "n_blocks": len(results),
+            "mean_f1_04": round(float(np.mean(f1_04)), 4),
+            "mean_f1_02": round(float(np.mean(f1_02)), 4),
+            "mean_f1_01": round(float(np.mean(f1_01)), 4),
+            "worst_block_f1_04": round(float(f1_04[worst_idx]), 4),
+            "worst_block_id": results[worst_idx].block,
+        }
+
+    return per_region
 
 
 def _ci_to_list(ci: tuple[float, float] | None) -> list[float] | None:
