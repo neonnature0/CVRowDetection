@@ -13,13 +13,15 @@ from fastapi import APIRouter, HTTPException
 
 from gui.config import ANNOTATIONS_DIR, IMAGES_DIR, DETECTIONS_DIR
 from gui.services import block_registry, detection_cache, task_runner
+from gui.services.name_validation import resolve_under_or_400, validate_block_name_or_400
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 def _annotation_path(name: str) -> Path:
-    return ANNOTATIONS_DIR / f"{name}.json"
+    validate_block_name_or_400(name)
+    return resolve_under_or_400(ANNOTATIONS_DIR, f"{name}.json")
 
 
 def _ensure_annotation(name: str):
@@ -39,7 +41,7 @@ def _ensure_annotation(name: str):
         raise HTTPException(400, "Run detection first before annotating")
 
     # Need the aerial image and mask (these were saved by detection_cache)
-    src_image = DETECTIONS_DIR / name / "image.png"
+    src_image = resolve_under_or_400(DETECTIONS_DIR, name, "image.png")
     if not src_image.exists():
         raise HTTPException(400, "Aerial image not cached. Re-run detection.")
 
@@ -47,8 +49,8 @@ def _ensure_annotation(name: str):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-    dst_image = IMAGES_DIR / f"{name}.png"
-    dst_mask = IMAGES_DIR / f"{name}_mask.png"
+    dst_image = resolve_under_or_400(IMAGES_DIR, f"{name}.png")
+    dst_mask = resolve_under_or_400(IMAGES_DIR, f"{name}_mask.png")
 
     if not dst_image.exists():
         img = cv2.imread(str(src_image))
@@ -136,6 +138,7 @@ def get_annotation_queue():
 @router.get("/{name}")
 def get_annotation(name: str):
     """Get the annotation JSON for a block."""
+    validate_block_name_or_400(name)
     path = _annotation_path(name)
     if not path.exists():
         raise HTTPException(404, "No annotation file for this block")
@@ -146,6 +149,7 @@ def get_annotation(name: str):
 @router.post("/{name}")
 def save_annotation(name: str, data: dict):
     """Save annotation JSON for a block."""
+    validate_block_name_or_400(name)
     ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
     path = _annotation_path(name)
     with open(path, "w", encoding="utf-8") as f:
@@ -163,6 +167,7 @@ def prepare_blind_annotation(name: str):
     The user will draw all rows from scratch in annotate.py without
     seeing any pipeline output. This produces unbiased ground truth.
     """
+    validate_block_name_or_400(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
@@ -170,7 +175,7 @@ def prepare_blind_annotation(name: str):
     ann_path = _annotation_path(name)
 
     # Need the aerial image — either from detection cache or fetch fresh
-    src_image = DETECTIONS_DIR / name / "image.png"
+    src_image = resolve_under_or_400(DETECTIONS_DIR, name, "image.png")
     if not src_image.exists():
         raise HTTPException(400, "Run detection first to cache the aerial image")
 
@@ -178,8 +183,8 @@ def prepare_blind_annotation(name: str):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-    dst_image = IMAGES_DIR / f"{name}.png"
-    dst_mask = IMAGES_DIR / f"{name}_mask.png"
+    dst_image = resolve_under_or_400(IMAGES_DIR, f"{name}.png")
+    dst_mask = resolve_under_or_400(IMAGES_DIR, f"{name}_mask.png")
 
     if not dst_image.exists():
         import shutil
@@ -260,6 +265,7 @@ def launch_editor(name: str):
     detection results. The matplotlib window opens in its own OS window.
     Poll /editor-status to check when it exits.
     """
+    validate_block_name_or_400(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
@@ -287,6 +293,7 @@ def editor_status(name: str, mtime_before: float | None = None):
       - {"status": "skipped"} — exited without saving
       - {"status": "not_started"} — no editor was launched
     """
+    validate_block_name_or_400(name)
     status = task_runner.check_editor_status(name)
 
     if status == "running":

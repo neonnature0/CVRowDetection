@@ -29,13 +29,15 @@ import cv2
 import numpy as np
 
 from gui.config import DETECTIONS_DIR, IMAGES_DIR, ANNOTATIONS_DIR
+from gui.services.name_validation import resolve_under_or_400, validate_block_name_or_400
 from vinerow.types import BlockRowDetectionResult
 
 logger = logging.getLogger(__name__)
 
 
 def _block_dir(name: str) -> Path:
-    return DETECTIONS_DIR / name
+    validate_block_name_or_400(name)
+    return resolve_under_or_400(DETECTIONS_DIR, name)
 
 
 def has_cached_result(name: str) -> bool:
@@ -117,6 +119,7 @@ def get_tuned_path(name: str, kind: str) -> Path:
 
 def invalidate_block(name: str):
     """Remove all cached artifacts for a block (boundary changed or block deleted)."""
+    validate_block_name_or_400(name)
     d = _block_dir(name)
     if d.exists():
         shutil.rmtree(d)
@@ -124,7 +127,7 @@ def invalidate_block(name: str):
 
     for dd, p in [(ANNOTATIONS_DIR, f"{name}.json"), (IMAGES_DIR, f"{name}.png"),
                   (IMAGES_DIR, f"{name}_mask.png")]:
-        path = dd / p
+        path = resolve_under_or_400(dd, p)
         if path.exists():
             path.unlink()
             logger.info("Invalidated: %s", path)
@@ -132,6 +135,7 @@ def invalidate_block(name: str):
 
 def invalidate_detection(name: str):
     """Remove detection cache only (for re-run). Keeps annotations and tuned config."""
+    validate_block_name_or_400(name)
     d = _block_dir(name)
     for fname in ["result.json", "image.png", "overlay.png", "thumbnail.png",
                   "tuned_overlay.png", "tuned_lines.png"]:

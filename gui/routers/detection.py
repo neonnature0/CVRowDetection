@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from gui.services import block_registry, detection_cache
+from gui.services.name_validation import validate_block_name_or_400
 from gui.services.detection_runner import (
     detect_block, generate_overlay, generate_lines_only_overlay, generate_thumbnail,
 )
@@ -104,6 +105,7 @@ def get_tunable_params():
 @router.post("/{name}/run")
 async def run_detection(name: str, force: bool = False):
     """Run the pipeline on a block with default config."""
+    validate_block_name_or_400(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
@@ -138,6 +140,7 @@ async def run_tuned_detection(name: str, req: TuneRequest):
 
     Does NOT overwrite the default detection cache.
     """
+    validate_block_name_or_400(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
@@ -196,6 +199,7 @@ async def run_tuned_detection(name: str, req: TuneRequest):
 @router.post("/{name}/apply-tuned")
 def apply_tuned_config(name: str):
     """Promote the tuned result to be the default (overwrite default cache)."""
+    validate_block_name_or_400(name)
     tuned_overlay = detection_cache.get_tuned_path(name, "overlay")
 
     if not tuned_overlay.exists():
@@ -251,6 +255,7 @@ def apply_tuned_config(name: str):
 @router.get("/{name}/tuned-overlay")
 def get_tuned_overlay(name: str):
     """Serve the tuned overlay image (for side-by-side comparison)."""
+    validate_block_name_or_400(name)
     path = detection_cache.get_tuned_path(name, "overlay")
     if not path.exists():
         raise HTTPException(404, "No tuned overlay. Run /tune first.")
@@ -260,6 +265,7 @@ def get_tuned_overlay(name: str):
 @router.get("/{name}/tuned-lines")
 def get_tuned_lines(name: str):
     """Serve the tuned lines-only transparent PNG (for onion-skin diff)."""
+    validate_block_name_or_400(name)
     path = detection_cache.get_tuned_path(name, "lines")
     if not path.exists():
         raise HTTPException(404, "No tuned lines image. Run /tune first.")
@@ -269,6 +275,7 @@ def get_tuned_lines(name: str):
 @router.get("/{name}/tuned-config")
 def get_tuned_config(name: str):
     """Get the saved tuned params for a block."""
+    validate_block_name_or_400(name)
     path = detection_cache.get_tuned_path(name, "config")
     if not path.exists():
         return {}
@@ -278,6 +285,7 @@ def get_tuned_config(name: str):
 @router.get("/{name}")
 def get_detection(name: str):
     """Get cached detection result."""
+    validate_block_name_or_400(name)
     data = detection_cache.load_cached_result(name)
     if data is None:
         raise HTTPException(404, "No detection result cached. Run detection first.")
@@ -287,6 +295,7 @@ def get_detection(name: str):
 @router.get("/{name}/overlay")
 def get_overlay(name: str):
     """Serve the overlay image (aerial + detected rows)."""
+    validate_block_name_or_400(name)
     path = detection_cache.get_image_path(name, "overlay")
     if path is None:
         raise HTTPException(404, "No overlay image. Run detection first.")
@@ -296,6 +305,7 @@ def get_overlay(name: str):
 @router.get("/{name}/image")
 def get_image(name: str):
     """Serve the raw aerial image."""
+    validate_block_name_or_400(name)
     path = detection_cache.get_image_path(name, "image")
     if path is None:
         raise HTTPException(404, "No aerial image. Run detection first.")
@@ -305,6 +315,7 @@ def get_image(name: str):
 @router.get("/{name}/thumbnail")
 def get_thumbnail(name: str):
     """Serve the thumbnail image."""
+    validate_block_name_or_400(name)
     path = detection_cache.get_image_path(name, "thumbnail")
     if path is None:
         raise HTTPException(404, "No thumbnail. Run detection first.")
