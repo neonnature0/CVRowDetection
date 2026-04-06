@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 import threading
 from datetime import datetime, timezone
@@ -76,12 +77,28 @@ def _git_is_dirty() -> bool:
 def _read_json_array(path: Path) -> list[dict]:
     if not path.exists():
         return []
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.error("Failed to read JSON array from %s: %s", path, exc)
+        _backup_corrupt_file(path)
+        return []
     if not isinstance(data, list):
         logger.warning("Expected JSON array in %s, got %s", path, type(data).__name__)
         return []
     return data
+
+
+def _backup_corrupt_file(path: Path) -> None:
+    """Create a timestamped forensic backup next to a corrupt file."""
+    try:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup_path = path.with_name(f"{path.name}.corrupt.{ts}")
+        shutil.copy2(path, backup_path)
+        logger.warning("Backed up unreadable JSON file %s to %s", path, backup_path)
+    except OSError as exc:
+        logger.error("Failed to create corrupt backup for %s: %s", path, exc)
 
 
 def _write_json_array(path: Path, data: list[dict]) -> None:
