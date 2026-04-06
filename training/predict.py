@@ -97,10 +97,22 @@ def predict_block_likelihood(
 
 
 def load_model(checkpoint_path: str, encoder: str = "mobilenet_v2", device: str = "cpu") -> torch.nn.Module:
-    """Load a trained checkpoint."""
+    """Load a trained checkpoint.
+
+    Handles both plain state dicts (old format) and calibrated checkpoints
+    that store {"model_state_dict": ..., "temperature": ...}.
+    """
     model = create_model(encoder_name=encoder, encoder_weights=None)
-    state = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    model.load_state_dict(state)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        model.load_state_dict(checkpoint["model_state_dict"])
+        if "temperature" in checkpoint:
+            model._temperature = checkpoint["temperature"]
+            logger.info("Loaded calibrated model (T=%.3f) from %s", checkpoint["temperature"], checkpoint_path)
+    else:
+        model.load_state_dict(checkpoint)
+
     model.to(device)
     model.eval()
     return model
