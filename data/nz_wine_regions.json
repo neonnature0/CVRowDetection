@@ -1,0 +1,13 @@
+[
+  { "name": "Northland",       "lat": -35.500, "lng": 173.800 },
+  { "name": "Auckland",        "lat": -36.850, "lng": 174.760 },
+  { "name": "Waikato/BOP",     "lat": -37.800, "lng": 175.800 },
+  { "name": "Gisborne",        "lat": -38.660, "lng": 178.020 },
+  { "name": "Hawke's Bay",     "lat": -39.480, "lng": 176.920 },
+  { "name": "Wairarapa",       "lat": -41.220, "lng": 175.460 },
+  { "name": "Nelson",          "lat": -41.270, "lng": 173.280 },
+  { "name": "Marlborough",     "lat": -41.510, "lng": 173.960 },
+  { "name": "Canterbury",      "lat": -43.530, "lng": 172.620 },
+  { "name": "Waitaki Valley",  "lat": -44.950, "lng": 170.450 },
+  { "name": "Central Otago",   "lat": -45.030, "lng": 169.200 }
+]
