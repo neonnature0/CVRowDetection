@@ -153,6 +153,10 @@ data/                 Region reference data, block registry
 - LINZ API key (free) for NZ aerial imagery
 - The annotation editor uses matplotlib in a subprocess, so the GUI must run locally (not on a headless server)
 
+## Experimental Features
+
+**LiDAR canopy height**: For New Zealand blocks with LiDAR coverage, the pipeline can fetch free 1m elevation data from LINZ (via AWS Open Data). Computes canopy height (DSM minus DEM) to validate that a drawn polygon is actually a vineyard and flag areas with trees or buildings. Requires `rasterio` (`pip install rasterio`), currently limited to Marlborough datasets.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
