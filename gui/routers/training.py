@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from gui.config import ANNOTATIONS_DIR, PROJECT_ROOT
+from gui.config import ANNOTATIONS_DIR, PROJECT_ROOT, RECOMMENDED_MINIMUM_TRAINING_BLOCKS
 from gui.services import block_registry, detection_cache, task_runner
 
 logger = logging.getLogger(__name__)
@@ -23,19 +23,68 @@ PROGRESS_FILE = CHECKPOINTS_DIR / "training_progress.json"
 
 
 def _count_annotated() -> int:
+    return _training_data_summary()["annotated_blocks_total"]
+
+
+def _training_data_summary() -> dict:
+    """Compute per-block training data freshness from annotation metadata.
+
+    A block has "fresh" training data if training_data_generated_at exists
+    and is newer than the annotation's last modification time. "Stale" means
+    training data exists but the annotation was modified afterwards. "Missing"
+    means no training data has ever been generated.
+    """
+    total = 0
+    fresh = 0
+    stale = 0
+    missing = 0
+
     if not ANNOTATIONS_DIR.exists():
-        return 0
-    count = 0
+        return {
+            "annotated_blocks_total": 0,
+            "blocks_with_fresh_training_data": 0,
+            "blocks_with_stale_training_data": 0,
+            "blocks_without_training_data": 0,
+        }
+
     for f in ANNOTATIONS_DIR.glob("*.json"):
         if f.name == "manifest.json":
             continue
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
-            if data.get("metadata", {}).get("status") == "complete":
-                count += 1
+            if data.get("metadata", {}).get("status") != "complete":
+                continue
+            total += 1
+
+            metadata = data.get("metadata", {})
+            gen_at = metadata.get("training_data_generated_at")
+            if not gen_at:
+                missing += 1
+                continue
+
+            # Compare generation time against annotation modification time.
+            # Use modified_at if set, otherwise fall back to file mtime.
+            mod_at = metadata.get("modified_at")
+            if mod_at:
+                annotation_changed = mod_at
+            else:
+                annotation_changed = datetime.fromtimestamp(
+                    f.stat().st_mtime, tz=timezone.utc
+                ).isoformat()
+
+            if gen_at >= annotation_changed:
+                fresh += 1
+            else:
+                stale += 1
         except (json.JSONDecodeError, OSError):
             pass
-    return count
+
+    return {
+        "annotated_blocks_total": total,
+        "blocks_with_fresh_training_data": fresh,
+        "blocks_with_stale_training_data": stale,
+        "blocks_without_training_data": missing,
+    }
 
 
 def _model_info() -> dict | None:
@@ -55,12 +104,15 @@ def _model_info() -> dict | None:
 
 @router.get("/stats")
 def training_stats():
-    """Return annotation count and model info."""
+    """Return annotation count, training data state, and model info."""
+    summary = _training_data_summary()
     return {
-        "annotated_blocks": _count_annotated(),
+        "annotated_blocks": summary["annotated_blocks_total"],
         "model": _model_info(),
         "training_status": task_runner.check_training_status(),
         "generate_status": task_runner.check_generate_status(),
+        **summary,
+        "recommended_minimum_blocks": RECOMMENDED_MINIMUM_TRAINING_BLOCKS,
     }
 
 

@@ -280,6 +280,37 @@
           </div>
         </div>
 
+        <!-- Training data status -->
+        <div x-show="stats && state === 'idle'" style="margin: 12px 0; padding: 10px 12px; background: var(--surface-alt, rgba(255,255,255,0.03)); border-radius: 8px; font-size: 13px; line-height: 1.8;">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">With training data:</span>
+            <span x-text="stats ? stats.blocks_with_fresh_training_data : 0"></span>
+          </div>
+          <div x-show="stats && stats.blocks_with_stale_training_data > 0" style="display: flex; justify-content: space-between;">
+            <span style="color: var(--warning);">Stale (annotation edited since):</span>
+            <span style="color: var(--warning);" x-text="stats ? stats.blocks_with_stale_training_data : 0"></span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Without training data:</span>
+            <span x-text="stats ? stats.blocks_without_training_data : 0"></span>
+          </div>
+          <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); color: var(--text-muted); font-size: 12px;">
+            Recommended minimum: <span x-text="stats ? stats.recommended_minimum_blocks : ''"></span> blocks before training
+          </div>
+          <!-- Readiness indicator -->
+          <div style="margin-top: 6px; font-size: 12px;">
+            <template x-if="stats && stats.blocks_with_fresh_training_data === 0">
+              <span style="color: var(--warning);">&#9888; No training data generated yet</span>
+            </template>
+            <template x-if="stats && stats.blocks_with_fresh_training_data > 0 && stats.blocks_with_fresh_training_data < stats.recommended_minimum_blocks">
+              <span style="color: var(--warning);">&#9888; Below recommended minimum (<span x-text="stats.blocks_with_fresh_training_data"></span> / <span x-text="stats.recommended_minimum_blocks"></span>)</span>
+            </template>
+            <template x-if="stats && stats.blocks_with_fresh_training_data >= stats.recommended_minimum_blocks">
+              <span style="color: var(--success);">&#10003; Ready to train</span>
+            </template>
+          </div>
+        </div>
+
         <!-- Idle -->
         <template x-if="state === 'idle'">
           <div class="train-actions">
@@ -287,11 +318,14 @@
               Step 1: Generate training patches from completed annotations.<br>
               Step 2: Train the U-Net model.
             </p>
-            <button class="btn btn-primary" @click="generate()" style="width: 100%; margin-bottom: 8px;">
+            <button class="btn btn-primary" @click="generate()" style="width: 100%; margin-bottom: 8px;"
+                    :disabled="!stats || stats.annotated_blocks_total === 0">
               Generate Training Data
             </button>
-            <button class="btn btn-success" @click="startTraining()" style="width: 100%;"
-                    :disabled="!stats || stats.annotated_blocks === 0">
+            <button class="btn" @click="startTraining()" style="width: 100%;"
+                    :class="stats && stats.blocks_with_fresh_training_data > 0 && stats.blocks_with_fresh_training_data < stats.recommended_minimum_blocks ? 'btn-warning' : 'btn-success'"
+                    :disabled="!stats || stats.blocks_with_fresh_training_data === 0"
+                    :title="!stats || stats.blocks_with_fresh_training_data === 0 ? 'Generate training data first.' : stats.blocks_with_fresh_training_data < stats.recommended_minimum_blocks ? 'Only ' + stats.blocks_with_fresh_training_data + ' blocks with training data. Recommended: ' + stats.recommended_minimum_blocks + '+. Training on too few blocks will overfit.' : ''">
               Start Training
             </button>
           </div>

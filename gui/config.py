@@ -17,6 +17,9 @@ TILE_CACHE_DIR = PROJECT_ROOT / "output" / ".tile_cache"
 THUMBNAILS_DIR = PROJECT_ROOT / "output" / "thumbnails"
 TRAINING_PROGRESS_FILE = PROJECT_ROOT / "output" / "training_progress.json"
 
+# Training
+RECOMMENDED_MINIMUM_TRAINING_BLOCKS = 10
+
 # Server
 HOST = "127.0.0.1"
 PORT = 8765

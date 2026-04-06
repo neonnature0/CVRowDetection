@@ -18,6 +18,7 @@ import json
 import logging
 import math
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
@@ -304,6 +305,12 @@ def main():
         )
         total_patches += n
         print(f" {n} patches")
+
+        # Record generation timestamp in annotation metadata (only on success)
+        if n > 0:
+            d["metadata"]["training_data_generated_at"] = datetime.now(timezone.utc).isoformat()
+            with open(f, "w", encoding="utf-8") as fh:
+                json.dump(d, fh, indent=2, ensure_ascii=False)
 
     # Generate splits
     if vineyards:
