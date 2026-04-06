@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from gui.routers import annotation, blocks, detection, elevation, progress, tiles, training, verify
@@ -22,6 +23,16 @@ def create_app() -> FastAPI:
         if path.startswith("/api/") or path.endswith((".js", ".css", ".html")):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    # Handle corrupted tracking files with a clean 500 instead of untyped exception
+    from tracking.storage import TrackingStorageCorrupted
+
+    @app.exception_handler(TrackingStorageCorrupted)
+    async def _tracking_corrupted_handler(request: Request, exc: TrackingStorageCorrupted):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Tracking data corrupted: {exc}. Check tracking files manually."},
+        )
 
     app.include_router(blocks.router, prefix="/api/blocks", tags=["blocks"])
     app.include_router(detection.router, prefix="/api/detection", tags=["detection"])

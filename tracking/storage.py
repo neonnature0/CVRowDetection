@@ -20,6 +20,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
+class TrackingStorageCorrupted(Exception):
+    """Raised when a tracking JSON file is corrupted or has invalid structure.
+
+    The corrupted file is backed up to {path}.corrupt.{timestamp} before raising.
+    Never catch this silently — a corrupted file must be surfaced to the operator.
+    """
+    pass
+
+
 TRACKING_DIR = Path(__file__).resolve().parent
 RUNS_FILE = TRACKING_DIR / "runs.json"
 BLOCK_RESULTS_FILE = TRACKING_DIR / "per_block_results.json"
@@ -81,24 +91,28 @@ def _read_json_array(path: Path) -> list[dict]:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        logger.error("Failed to read JSON array from %s: %s", path, exc)
-        _backup_corrupt_file(path)
-        return []
+        backup_path = _backup_corrupt_file(path)
+        msg = f"Corrupted tracking file: {path}. Backup saved to {backup_path}. Error: {exc}"
+        logger.error(msg)
+        raise TrackingStorageCorrupted(msg) from exc
     if not isinstance(data, list):
-        logger.warning("Expected JSON array in %s, got %s", path, type(data).__name__)
-        return []
+        backup_path = _backup_corrupt_file(path)
+        msg = f"Tracking file {path} contains {type(data).__name__}, expected array. Backup saved to {backup_path}."
+        logger.error(msg)
+        raise TrackingStorageCorrupted(msg)
     return data
 
 
-def _backup_corrupt_file(path: Path) -> None:
-    """Create a timestamped forensic backup next to a corrupt file."""
+def _backup_corrupt_file(path: Path) -> Path:
+    """Create a timestamped forensic backup next to a corrupt file. Returns backup path."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup_path = path.with_name(f"{path.name}.corrupted.{ts}")
     try:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup_path = path.with_name(f"{path.name}.corrupt.{ts}")
         shutil.copy2(path, backup_path)
-        logger.warning("Backed up unreadable JSON file %s to %s", path, backup_path)
+        logger.error("Backed up corrupted file %s to %s", path, backup_path)
     except OSError as exc:
         logger.error("Failed to create corrupt backup for %s: %s", path, exc)
+    return backup_path
 
 
 def _write_json_array(path: Path, data: list[dict]) -> None:
