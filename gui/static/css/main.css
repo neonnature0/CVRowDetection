@@ -141,6 +141,22 @@ main { flex: 1; position: relative; overflow: hidden; }
 .difficulty-dot:hover { border-color: var(--accent); color: var(--text); }
 .difficulty-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+/* Region selector on library cards */
+.card-region {
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 10px 6px; font-size: 11px;
+}
+.region-label { color: var(--text-muted); }
+.region-select {
+  flex: 1; padding: 2px 4px; font-size: 11px;
+  background: var(--bg-dark); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; cursor: pointer;
+}
+.region-low-conf {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--warning);
+}
+
 .card-actions { display: flex; gap: 4px; padding: 0 10px 10px; }
 .card-expanded { padding: 8px; background: #111; }
 

@@ -6,10 +6,19 @@ document.addEventListener('alpine:init', () => {
   Alpine.data('libraryView', () => ({
     filter: 'all',  // all | draft | detected | annotated | verified
     expandedBlock: null,
+    regionOptions: [],  // loaded from /api/blocks/meta/regions
     detecting: null,  // block name currently being detected
     editorBlock: null,  // block name with open editor
     editorMtime: null,
     editorPollId: null,
+
+    async init() {
+      try {
+        this.regionOptions = await API.get('/api/blocks/meta/regions');
+      } catch (e) {
+        console.error('Failed to load region options:', e);
+      }
+    },
 
     get filteredBlocks() {
       const blocks = this.$store.app.blocks;
@@ -132,6 +141,15 @@ document.addEventListener('alpine:init', () => {
         await this.$store.app.refreshBlocks();
       } catch (e) {
         console.error('Failed to set difficulty:', e);
+      }
+    },
+
+    async setRegion(name, region) {
+      try {
+        await API.patch('/api/blocks/' + name + '/region', { region: region || null });
+        await this.$store.app.refreshBlocks();
+      } catch (e) {
+        console.error('Failed to set region:', e);
       }
     },
   }));

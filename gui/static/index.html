@@ -220,6 +220,20 @@
               </template>
             </div>
 
+            <!-- Region -->
+            <div class="card-region">
+              <span class="region-label">Region:</span>
+              <span class="region-low-conf" x-show="block.region_auto_detected && block.region === 'Other'" title="Auto-detected with low confidence — verify manually"></span>
+              <select class="region-select" :value="block.region || ''"
+                      @change="setRegion(block.name, $event.target.value)">
+                <option value="">—</option>
+                <template x-for="r in regionOptions" :key="r">
+                  <option :value="r" x-text="r"></option>
+                </template>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
             <!-- Actions -->
             <div class="card-actions">
               <button class="btn btn-primary btn-sm"
