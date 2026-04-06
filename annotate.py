@@ -103,7 +103,7 @@ class RowData:
 
 @dataclass
 class Action:
-    type: str  # 'move_point', 'add', 'delete', 'insert_cp', 'remove_cp', 'generate_posts', 'clear_posts'
+    type: str  # 'move_point', 'add', 'delete', 'insert_cp', 'remove_cp', 'place_post', 'generate_posts', 'clear_posts'
     row_id: int
     old_centerline: list[tuple[float, float]] | None = None
     new_centerline: list[tuple[float, float]] | None = None
@@ -1113,8 +1113,16 @@ class AnnotationTool:
     # --- Strainer Post Mode ---
 
     def _place_post(self, x: float, y: float):
-        """Place a strainer post marker at the clicked position."""
+        """Place a strainer post marker at the clicked position (undoable)."""
         self.posts.append((x, y))
+
+        action = Action(
+            type="place_post", row_id=-1,
+            saved_posts=[(x, y)],  # the single post that was placed
+        )
+        self.state.undo_stack.append(action)
+        self.state.redo_stack.clear()
+
         self._redraw_all()
         logger.debug("Placed post #%d at (%.1f, %.1f)", len(self.posts), x, y)
 
@@ -1294,6 +1302,16 @@ class AnnotationTool:
                 self.state.rows.append(row)
                 self.state.sort_rows()
 
+        elif action.type == "place_post":
+            # Remove the last post (the one that was just placed)
+            if self.posts and action.saved_posts:
+                placed = action.saved_posts[0]
+                # Remove from end (most recent match)
+                for k in range(len(self.posts) - 1, -1, -1):
+                    if self.posts[k] == placed:
+                        self.posts.pop(k)
+                        break
+
         elif action.type == "generate_posts":
             # Remove all generated rows, restore posts
             if action.generated_row_ids:
@@ -1329,6 +1347,10 @@ class AnnotationTool:
 
         elif action.type == "delete":
             self.state.rows = [r for r in self.state.rows if r.id != action.row_id]
+
+        elif action.type == "place_post":
+            if action.saved_posts:
+                self.posts.append(action.saved_posts[0])
 
         elif action.type == "generate_posts":
             # Re-create rows from stored data, clear posts
