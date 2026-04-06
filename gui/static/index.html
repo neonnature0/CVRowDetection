@@ -442,6 +442,7 @@
       <!-- Panel tabs -->
       <div class="progress-tabs">
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'runs' }" @click="panel = 'runs'">Runs</button>
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'regions' }" @click="panel = 'regions'; loadRegionSummary()">Regions</button>
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'learning' }" @click="panel = 'learning'; loadLearningCurve()">Learning Curve</button>
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'trajectories' }" @click="panel = 'trajectories'; loadTrajectories()">Block Trajectories</button>
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'compare' }" @click="panel = 'compare'">Compare Runs</button>
@@ -506,6 +507,37 @@
                 </template>
               </div>
             </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- Panel: Regions -->
+      <div class="progress-panel" x-show="panel === 'regions'">
+        <!-- Imbalance warning -->
+        <div class="tab-help" x-show="regionImbalanceWarning" style="background: rgba(243,156,18,0.1); border-bottom-color: rgba(243,156,18,0.3); margin-bottom: 12px; border-radius: 8px;">
+          <span class="tab-help-icon" style="background: var(--warning);">!</span>
+          <span class="tab-help-text" x-text="regionImbalanceWarning"></span>
+        </div>
+
+        <template x-if="regionCounts.length === 0">
+          <div class="placeholder-view" style="height: auto; padding: 48px;">No region data available. Assign regions to blocks in the Library view or run detection on blocks with boundaries.</div>
+        </template>
+
+        <template x-if="regionCounts.length > 0">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <!-- Element A: Region sample sizes -->
+            <div>
+              <h3 style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">Block Count by Region</h3>
+              <canvas id="region-counts-chart" height="250"></canvas>
+            </div>
+            <!-- Element B: Per-region F1 over time -->
+            <div>
+              <h3 style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">Per-Region F1 Over Time</h3>
+              <canvas id="region-f1-chart" height="250"></canvas>
+              <div x-show="regionEligible.length === 0" style="color: var(--text-muted); font-size: 12px; text-align: center; margin-top: 8px;">
+                No regions have 3+ blocks evaluated in any run yet.
+              </div>
+            </div>
           </div>
         </template>
       </div>
@@ -584,6 +616,32 @@
                   </template>
                 </tbody>
               </table>
+
+              <!-- Per-region deltas -->
+              <template x-if="comparisonResult.per_region_deltas && comparisonResult.per_region_deltas.length > 0">
+                <div style="margin-top: 16px;">
+                  <h3 style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">Per-Region Changes</h3>
+                  <table class="runs-table">
+                    <thead><tr><th>Region</th><th>Blocks</th><th>Old F1</th><th>New F1</th><th>Delta</th><th>Note</th></tr></thead>
+                    <tbody>
+                      <template x-for="d in comparisonResult.per_region_deltas" :key="d.region">
+                        <tr>
+                          <td x-text="d.region"></td>
+                          <td x-text="d.n_blocks_compared"></td>
+                          <td x-text="(d.old_mean_f1_04 * 100).toFixed(1) + '%'"></td>
+                          <td x-text="(d.new_mean_f1_04 * 100).toFixed(1) + '%'"></td>
+                          <td :style="'color:' + (d.note === 'regression' ? 'var(--danger)' : d.note === 'improvement' ? 'var(--success)' : d.note === 'new region' ? 'var(--text-muted)' : '')"
+                              x-text="(d.delta > 0 ? '+' : '') + (d.delta * 100).toFixed(1) + '%'"></td>
+                          <td><span class="run-type-badge"
+                                    :class="{'run-type-evaluation': d.note === 'regression', 'run-type-training': d.note === 'improvement', 'run-type-tuning': d.note === 'new region'}"
+                                    :style="d.note === 'regression' ? 'background: rgba(231,76,60,0.2); color: #e74c3c;' : d.note === 'improvement' ? 'background: rgba(46,204,113,0.2); color: #2ecc71;' : d.note === 'new region' ? 'background: rgba(136,136,136,0.2); color: #888;' : ''"
+                                    x-text="d.note"></span></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
             </div>
           </template>
 

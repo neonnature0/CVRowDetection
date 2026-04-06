@@ -137,12 +137,140 @@ def compare_runs(old_run_id: str, new_run_id: str):
     # Sort by absolute delta (biggest changes first)
     per_block_deltas.sort(key=lambda d: abs(d["delta"]), reverse=True)
 
+    # Per-region deltas
+    from collections import defaultdict
+    old_by_region: dict[str, list[float]] = defaultdict(list)
+    new_by_region: dict[str, list[float]] = defaultdict(list)
+    old_all_regions: set[str] = set()
+    new_all_regions: set[str] = set()
+
+    for bid in common_ids:
+        old_r = old_blocks[bid]
+        new_r = new_blocks[bid]
+        old_region = old_r.get("region")
+        new_region = new_r.get("region")
+        # Use the new run's region assignment (most current)
+        region = new_region or old_region
+        if region:
+            old_by_region[region].append(old_r.get("f1_04", 0) or 0)
+            new_by_region[region].append(new_r.get("f1_04", 0) or 0)
+
+    # Also track regions that appear only in old or new (for "new region" detection)
+    for bid in old_blocks:
+        r = old_blocks[bid].get("region")
+        if r:
+            old_all_regions.add(r)
+    for bid in new_blocks:
+        r = new_blocks[bid].get("region")
+        if r:
+            new_all_regions.add(r)
+
+    per_region_deltas = []
+    all_regions = set(old_by_region.keys()) | set(new_by_region.keys())
+    for region in sorted(all_regions):
+        old_vals = old_by_region.get(region, [])
+        new_vals = new_by_region.get(region, [])
+        n_compared = min(len(old_vals), len(new_vals))
+        if n_compared == 0:
+            continue
+
+        old_mean = sum(old_vals) / len(old_vals) if old_vals else 0.0
+        new_mean = sum(new_vals) / len(new_vals) if new_vals else 0.0
+        delta = new_mean - old_mean
+
+        # Determine note
+        if region not in old_all_regions and region in new_all_regions:
+            note = "new region"
+        elif delta < -0.02:
+            note = "regression"
+        elif delta > 0.02:
+            note = "improvement"
+        else:
+            note = "unchanged"
+
+        per_region_deltas.append({
+            "region": region,
+            "n_blocks_compared": n_compared,
+            "old_mean_f1_04": round(old_mean, 4),
+            "new_mean_f1_04": round(new_mean, 4),
+            "delta": round(delta, 4),
+            "note": note,
+        })
+
     return {
         "old_run_id": old_run_id,
         "new_run_id": new_run_id,
         "n_blocks_compared": len(common_ids),
         "paired_test": paired_result,
         "per_block_deltas": per_block_deltas,
+        "per_region_deltas": per_region_deltas,
+    }
+
+
+@router.get("/region-summary")
+def region_summary():
+    """Return per-region block counts and F1 over time for the Regions panel.
+
+    Returns:
+        - region_counts: [{region, count}] sorted by count descending
+        - region_f1_timeline: [{run_index, run_id, timestamp, regions: {region: mean_f1_04}}]
+          Only includes regions with >= 3 blocks in at least one run.
+    """
+    runs = storage.load_runs()
+    # Reverse so oldest is first (for chronological timeline)
+    runs_chrono = list(reversed(runs))
+
+    # Region counts from the most recent run with per_region_metrics
+    region_counts = []
+    for r in runs:  # newest first
+        prm = r.get("per_region_metrics")
+        if prm:
+            region_counts = [
+                {"region": region, "count": data["n_blocks"]}
+                for region, data in prm.items()
+            ]
+            region_counts.sort(key=lambda x: x["count"], reverse=True)
+            break
+
+    # If no runs have per_region_metrics, try counting from block registry
+    if not region_counts:
+        try:
+            from gui.services.block_registry import list_blocks
+            blocks = list_blocks()
+            from collections import Counter
+            counts = Counter(b.get("region") for b in blocks if b.get("region"))
+            region_counts = [{"region": r, "count": c} for r, c in counts.most_common()]
+        except Exception:
+            pass
+
+    # Build F1 timeline: per-region mean_f1_04 across runs
+    # Only include regions that hit >= 3 blocks in at least one run
+    eligible_regions = set()
+    for r in runs_chrono:
+        prm = r.get("per_region_metrics") or {}
+        for region, data in prm.items():
+            if data.get("n_blocks", 0) >= 3:
+                eligible_regions.add(region)
+
+    timeline = []
+    for idx, r in enumerate(runs_chrono):
+        prm = r.get("per_region_metrics") or {}
+        entry = {
+            "run_index": idx,
+            "run_id": r["run_id"],
+            "timestamp": r.get("timestamp"),
+            "regions": {},
+        }
+        for region in eligible_regions:
+            if region in prm:
+                entry["regions"][region] = prm[region].get("mean_f1_04")
+            # else: gap — omit from this entry's regions dict
+        timeline.append(entry)
+
+    return {
+        "region_counts": region_counts,
+        "region_f1_timeline": timeline,
+        "eligible_regions": sorted(eligible_regions),
     }
 
 

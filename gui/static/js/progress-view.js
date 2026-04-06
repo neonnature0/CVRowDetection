@@ -19,6 +19,13 @@ document.addEventListener('alpine:init', () => {
     worstBlocks: [],
     trajectoryCharts: {},
 
+    // Regions
+    regionCounts: [],
+    regionTimeline: [],
+    regionEligible: [],
+    regionCountsChart: null,
+    regionF1Chart: null,
+
     // Run comparison
     compareOld: '',
     compareNew: '',
@@ -42,6 +49,20 @@ document.addEventListener('alpine:init', () => {
       const latest = this.runs.find(r => r.aggregate_metrics);
       const n = latest ? (latest.aggregate_metrics.total_blocks_evaluated || 0) : 0;
       return 'Sample size is small (N=' + n + '). F1 differences smaller than approximately 3% are indistinguishable from noise at this sample size. Focus on big changes until you have 15+ blocks.';
+    },
+
+    get regionImbalanceWarning() {
+      if (this.regionCounts.length <= 1) return '';
+      const counts = this.regionCounts.filter(r => r.count > 0);
+      if (counts.length <= 1) return '';
+      const largest = counts[0]; // sorted descending
+      const smallest = counts[counts.length - 1];
+      const ratio = largest.count / Math.max(smallest.count, 1);
+      if (ratio <= 5) return '';
+      return 'Training set is imbalanced: ' + largest.region + ' has ' + largest.count +
+        ' blocks, ' + smallest.region + ' has ' + smallest.count +
+        ' blocks. The model will be biased toward over-represented regions. ' +
+        'Consider annotating more blocks in under-represented regions, or adding sampling weights during training.';
     },
 
     get comparisonHeadline() {
@@ -89,6 +110,89 @@ document.addEventListener('alpine:init', () => {
       if (!m || !m.failure_mode_counts) return '—';
       const f = m.failure_mode_counts;
       return (f.false_positives || 0) + '/' + (f.false_negatives || 0);
+    },
+
+    // ── Regions ──
+
+    async loadRegionSummary() {
+      try {
+        const data = await API.get('/api/progress/region-summary');
+        this.regionCounts = data.region_counts || [];
+        this.regionTimeline = data.region_f1_timeline || [];
+        this.regionEligible = data.eligible_regions || [];
+        this.$nextTick(() => this.renderRegionCharts());
+      } catch (e) {
+        console.error('Failed to load region summary:', e);
+      }
+    },
+
+    renderRegionCharts() {
+      // Element A: Region counts bar chart
+      if (this.regionCountsChart) { this.regionCountsChart.destroy(); this.regionCountsChart = null; }
+      const countsCanvas = document.getElementById('region-counts-chart');
+      if (countsCanvas && this.regionCounts.length > 0) {
+        const labels = this.regionCounts.map(r => r.region);
+        const values = this.regionCounts.map(r => r.count);
+        this.regionCountsChart = new Chart(countsCanvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Blocks',
+              data: values,
+              backgroundColor: 'rgba(74,158,255,0.6)',
+              borderColor: '#4a9eff',
+              borderWidth: 1,
+            }],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              annotation: undefined,
+            },
+            scales: {
+              x: {
+                ticks: { color: '#888' }, grid: { color: '#333' },
+                title: { display: true, text: 'Block count', color: '#888' },
+              },
+              y: { ticks: { color: '#e0e0e0', font: { size: 11 } }, grid: { display: false } },
+            },
+          },
+        });
+      }
+
+      // Element B: Per-region F1 over time
+      if (this.regionF1Chart) { this.regionF1Chart.destroy(); this.regionF1Chart = null; }
+      const f1Canvas = document.getElementById('region-f1-chart');
+      if (f1Canvas && this.regionEligible.length > 0 && this.regionTimeline.length > 0) {
+        const labels = this.regionTimeline.map((_, i) => 'R' + (i + 1));
+        const colors = ['#4a9eff', '#2ecc71', '#f39c12', '#e74c3c', '#9b59b6', '#1abc9c', '#e67e22', '#3498db', '#e91e63', '#00bcd4', '#ff9800'];
+        const datasets = this.regionEligible.map((region, idx) => ({
+          label: region,
+          data: this.regionTimeline.map(t => t.regions[region] != null ? t.regions[region] : null),
+          borderColor: colors[idx % colors.length],
+          spanGaps: false,  // show gaps, don't interpolate
+          pointRadius: 3,
+          tension: 0,
+        }));
+
+        this.regionF1Chart = new Chart(f1Canvas, {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { labels: { color: '#e0e0e0', font: { size: 10 } } },
+            },
+            scales: {
+              x: { ticks: { color: '#888' }, grid: { color: '#333' } },
+              y: { min: 0, max: 1, ticks: { color: '#888' }, grid: { color: '#333' }, title: { display: true, text: 'Mean F1 (0.4x)', color: '#888' } },
+            },
+          },
+        });
+      }
     },
 
     // ── Learning Curve ──
