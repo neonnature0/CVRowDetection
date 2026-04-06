@@ -201,6 +201,13 @@ def apply_tuned_config(name: str):
     if not tuned_overlay.exists():
         raise HTTPException(404, "No tuned result to apply. Run /tune first.")
 
+    # Read old config (defaults) and new config (tuned) for config_diff
+    old_config = {k: v["default"] for k, v in TUNABLE_PARAMS.items()}
+    new_config = {}
+    tuned_config_path = detection_cache.get_tuned_path(name, "config")
+    if tuned_config_path.exists():
+        new_config = json.loads(tuned_config_path.read_text(encoding="utf-8"))
+
     import shutil
     default_overlay = detection_cache.get_image_path(name, "overlay")
     if default_overlay is None:
@@ -214,6 +221,29 @@ def apply_tuned_config(name: str):
         thumb = generate_thumbnail(overlay_img)
         thumb_path = detection_cache._block_dir(name) / "thumbnail.png"
         cv2.imwrite(str(thumb_path), thumb)
+
+    # Record tuning run to progress tracking
+    try:
+        from tracking.hooks import build_run_record
+        from tracking.storage import append_run
+
+        config_diff = {}
+        for key in set(list(old_config.keys()) + list(new_config.keys())):
+            old_val = old_config.get(key)
+            new_val = new_config.get(key)
+            if old_val != new_val:
+                config_diff[key] = {"old": old_val, "new": new_val}
+
+        if config_diff:
+            record = build_run_record(
+                run_type="tuning",
+                config_diff=config_diff,
+                notes=f"Applied tuned config on block {name}",
+            )
+            append_run(record)
+            logger.info("Tracking: recorded tuning run %s", record["run_id"])
+    except Exception as e:
+        logger.warning("Failed to record tuning tracking data: %s", e)
 
     return {"status": "applied"}
 

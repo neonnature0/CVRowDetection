@@ -249,6 +249,7 @@ def main():
     val_dices: list[float] = []
 
     print(f"\nTraining for {args.epochs} epochs (patience={args.patience})...\n")
+    training_start_time = time.perf_counter()
 
     for epoch in range(1, args.epochs + 1):
         t0 = time.perf_counter()
@@ -322,8 +323,27 @@ def main():
         "status": "complete",
     })
 
+    training_elapsed = time.perf_counter() - training_start_time
+
     print(f"\nTraining complete. Best val Dice: {best_dice:.4f}")
     print(f"Checkpoints saved to: {output_dir}")
+
+    # Record to progress tracking
+    try:
+        from tracking.hooks import build_run_record
+        from tracking.storage import append_run
+
+        record = build_run_record(
+            run_type="training",
+            train_set_size=len(splits["train"]),
+            train_block_ids=splits["train"],
+            training_time_seconds=training_elapsed if isinstance(training_elapsed, float) else None,
+            notes=f"encoder={args.encoder}, decoder={args.decoder}, epochs={len(train_losses)}, best_dice={best_dice:.4f}",
+        )
+        append_run(record)
+        print(f"  Tracking: recorded training run {record['run_id']}")
+    except Exception as e:
+        print(f"  Warning: failed to record tracking data: {e}")
 
     # Final test evaluation with best model
     if test_patches:
