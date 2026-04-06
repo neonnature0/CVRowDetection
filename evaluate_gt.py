@@ -167,10 +167,10 @@ class EvalResult:
     f1: float
     f1_medium: float        # F1 at 0.2x threshold
     f1_strict: float        # F1 at 0.1x threshold
-    localization_error_m: float
-    localization_error_px: float
-    shape_error_px: float   # mean bidirectional point-to-polyline distance
-    shape_error_m: float
+    localization_error_m: float | None      # None when no matches (undefined, not zero)
+    localization_error_px: float | None
+    shape_error_px: float | None   # mean bidirectional point-to-polyline distance
+    shape_error_m: float | None
     spacing_error_pct: float | None
     angle_error_deg: float | None
     false_positives: int
@@ -324,8 +324,8 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
             n_gt=n_gt, n_det=0, n_matched=0,
             precision=0.0, recall=0.0, f1=0.0,
             f1_medium=0.0, f1_strict=0.0,
-            localization_error_m=0.0, localization_error_px=0.0,
-            shape_error_px=0.0, shape_error_m=0.0,
+            localization_error_m=None, localization_error_px=None,
+            shape_error_px=None, shape_error_m=None,
             spacing_error_pct=None, angle_error_deg=None,
             false_positives=0, false_negatives=n_gt, time_s=elapsed,
             is_blind=is_blind,
@@ -367,8 +367,8 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
     f1_medium = _compute_f1(gt_perps, det_perps, mpp, THRESHOLD_MEDIUM)
     f1_strict = _compute_f1(gt_perps, det_perps, mpp, THRESHOLD_STRICT)
 
-    loc_error_px = float(np.mean(distances)) if distances else 0.0
-    loc_error_m = loc_error_px * mpp
+    loc_error_px = float(np.mean(distances)) if distances else None
+    loc_error_m = round(loc_error_px * mpp, 4) if loc_error_px is not None else None
 
     # Shape distance on matched pairs (dense-interpolated polylines)
     shape_dists = []
@@ -377,8 +377,8 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
         det_pl = det_polylines[di]
         if gt_pl and len(gt_pl) >= 2 and det_pl and len(det_pl) >= 2:
             shape_dists.append(polyline_shape_distance(gt_pl, det_pl, dense_step=5.0))
-    shape_error_px = float(np.mean(shape_dists)) if shape_dists else 0.0
-    shape_error_m = shape_error_px * mpp
+    shape_error_px = float(np.mean(shape_dists)) if shape_dists else None
+    shape_error_m = round(shape_error_px * mpp, 4) if shape_error_px is not None else None
 
     # Spacing error
     gt_sp = ann.get("ground_truth", {}).get("gt_spacing_m")
@@ -403,10 +403,10 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
         f1=round(f1, 4),
         f1_medium=round(f1_medium, 4),
         f1_strict=round(f1_strict, 4),
-        localization_error_m=round(loc_error_m, 4),
-        localization_error_px=round(loc_error_px, 2),
-        shape_error_px=round(shape_error_px, 2),
-        shape_error_m=round(shape_error_m, 4),
+        localization_error_m=loc_error_m,
+        localization_error_px=round(loc_error_px, 2) if loc_error_px is not None else None,
+        shape_error_px=round(shape_error_px, 2) if shape_error_px is not None else None,
+        shape_error_m=shape_error_m,
         spacing_error_pct=round(spacing_err, 1) if spacing_err is not None else None,
         angle_error_deg=round(angle_err, 2) if angle_err is not None else None,
         false_positives=len(unmatched_det),
@@ -504,12 +504,14 @@ def print_results(results: list[EvalResult]):
         blind_tag = " [B]" if r.is_blind else ""
         sp_err = f"{r.spacing_error_pct:.1f}" if r.spacing_error_pct is not None else "-"
         a_err = f"{r.angle_error_deg:.1f}" if r.angle_error_deg is not None else "-"
+        loc_str = f"{r.localization_error_m:>7.3f}" if r.localization_error_m is not None else f"{'—':>7}"
+        shape_str = f"{r.shape_error_m:>8.3f}" if r.shape_error_m is not None else f"{'—':>8}"
         rows_str = f"{r.n_det}/{r.n_gt}"
         pct = f"({(r.n_det - r.n_gt) / r.n_gt * 100:+.0f}%)" if r.n_gt > 0 else ""
         print(
             f"{r.block + blind_tag:<12} {rows_str + pct:>9} "
             f"{r.f1 * 100:>7.1f}% {r.f1_medium * 100:>7.1f}% {r.f1_strict * 100:>7.1f}% "
-            f"{r.localization_error_m:>7.3f} {r.shape_error_m:>8.3f} "
+            f"{loc_str} {shape_str} "
             f"{sp_err:>7} {a_err:>7} "
             f"{r.false_positives:>3} {r.false_negatives:>3}"
         )
@@ -521,12 +523,14 @@ def print_results(results: list[EvalResult]):
 
     # --- Summary ---
 
-    # Unweighted means
+    # Unweighted means (filter None values for loc/shape)
     mean_f1 = float(np.mean([r.f1 for r in results]))
     mean_f1_m = float(np.mean([r.f1_medium for r in results]))
     mean_f1_s = float(np.mean([r.f1_strict for r in results]))
-    mean_loc = float(np.mean([r.localization_error_m for r in results]))
-    mean_shape = float(np.mean([r.shape_error_m for r in results]))
+    loc_vals = [r.localization_error_m for r in results if r.localization_error_m is not None]
+    shape_vals = [r.shape_error_m for r in results if r.shape_error_m is not None]
+    mean_loc = float(np.mean(loc_vals)) if loc_vals else 0.0
+    mean_shape = float(np.mean(shape_vals)) if shape_vals else 0.0
 
     # Row-weighted means
     total_gt = sum(r.n_gt for r in results)
@@ -534,8 +538,10 @@ def print_results(results: list[EvalResult]):
         w_f1 = sum(r.f1 * r.n_gt for r in results) / total_gt
         w_f1_m = sum(r.f1_medium * r.n_gt for r in results) / total_gt
         w_f1_s = sum(r.f1_strict * r.n_gt for r in results) / total_gt
-        w_loc = sum(r.localization_error_m * r.n_gt for r in results) / total_gt
-        w_shape = sum(r.shape_error_m * r.n_gt for r in results) / total_gt
+        loc_w = [(r.localization_error_m, r.n_gt) for r in results if r.localization_error_m is not None]
+        shape_w = [(r.shape_error_m, r.n_gt) for r in results if r.shape_error_m is not None]
+        w_loc = sum(v * n for v, n in loc_w) / sum(n for _, n in loc_w) if loc_w else 0.0
+        w_shape = sum(v * n for v, n in shape_w) / sum(n for _, n in shape_w) if shape_w else 0.0
     else:
         w_f1 = w_f1_m = w_f1_s = w_loc = w_shape = 0.0
 

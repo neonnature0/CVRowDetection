@@ -63,8 +63,8 @@ def build_run_record(
         f1_04 = [r.f1 for r in eval_results]
         f1_02 = [r.f1_medium for r in eval_results]
         f1_01 = [r.f1_strict for r in eval_results]
-        loc_errors = [r.localization_error_m for r in eval_results]
-        shape_errors = [r.shape_error_m for r in eval_results]
+        loc_errors = [r.localization_error_m for r in eval_results if r.localization_error_m is not None]
+        shape_errors = [r.shape_error_m for r in eval_results if r.shape_error_m is not None]
 
         # Failure mode counts (aggregate across blocks)
         total_fp = sum(r.false_positives for r in eval_results)
@@ -93,8 +93,8 @@ def build_run_record(
             "std_f1_04": round(float(np.std(f1_04)), 4),
             "worst_block_f1_04": round(float(f1_04[worst_idx]), 4),
             "worst_block_id": eval_results[worst_idx].block,
-            "mean_localization_error_m": round(float(np.mean(loc_errors)), 4),
-            "mean_shape_distance_m": round(float(np.mean(shape_errors)), 4),
+            "mean_localization_error_m": round(float(np.mean(loc_errors)), 4) if loc_errors else None,
+            "mean_shape_distance_m": round(float(np.mean(shape_errors)), 4) if shape_errors else None,
             "ece": ece,
             "calibration_bins": bins,
             "total_blocks_evaluated": len(eval_results),
