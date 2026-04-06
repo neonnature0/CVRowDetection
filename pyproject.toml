@@ -7,7 +7,10 @@ packages = ["vinerow", "vinerow.loaders", "vinerow.acquisition", "vinerow.prepro
             "vinerow.orientation", "vinerow.ridge", "vinerow.candidates", "vinerow.tracking",
             "vinerow.fitting", "vinerow.detection", "vinerow.postprocessing", "vinerow.debug",
             "gui", "gui.routers", "gui.services",
-            "training"]
+            "training",
+            "blocks",
+            "tracking",
+            "vinerow.elevation"]
 
 [project]
 name = "cvrowdetection"
