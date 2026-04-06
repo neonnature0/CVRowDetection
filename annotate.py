@@ -27,6 +27,9 @@ Controls:
         Y:            Redo
         A:            Switch to Add mode (click to add straight row)
         D:            Switch to Delete mode (click row to delete)
+        T:            Switch to Post mode (click to place strainer posts)
+        G:            Generate rows from placed posts (Post mode only)
+        C:            Clear all placed posts (Post mode only)
         I:            Insert control point on selected row at cursor
         Delete:       Remove nearest control point on selected row
         Escape:       Back to Select mode / deselect
@@ -75,9 +78,14 @@ COLOR_MODIFIED = "#ff8800"    # orange for modified pipeline rows
 COLOR_ENDPOINT = "white"      # endpoint control point fill
 COLOR_MIDPOINT = "#ffdd00"    # intermediate control point fill
 COLOR_CP_EDGE = "black"       # control point border
+COLOR_POST = "#00ff88"         # bright green — strainer post markers
+COLOR_POST_UNPAIRED = "red"    # red ring for unpaired/ambiguous posts
 
 SELECT_RADIUS_PX = 25         # screen-pixel distance to select a row
 CP_GRAB_RADIUS_PX = 12        # screen-pixel distance to grab a control point
+
+# Post pairing
+POST_PAIR_TOLERANCE_FACTOR = 0.4   # fraction of median spacing for perp grouping
 
 
 # ---------------------------------------------------------------------------
@@ -95,11 +103,14 @@ class RowData:
 
 @dataclass
 class Action:
-    type: str  # 'move_point', 'add', 'delete', 'insert_cp', 'remove_cp'
+    type: str  # 'move_point', 'add', 'delete', 'insert_cp', 'remove_cp', 'generate_posts', 'clear_posts'
     row_id: int
     old_centerline: list[tuple[float, float]] | None = None
     new_centerline: list[tuple[float, float]] | None = None
     old_origin: str | None = None
+    generated_row_ids: list[int] | None = None           # generate_posts: IDs of created rows
+    generated_rows: list[dict] | None = None              # generate_posts: [{id, centerline_px}] for redo
+    saved_posts: list[tuple[float, float]] | None = None  # posts snapshot before generate/clear
 
 
 @dataclass
@@ -467,8 +478,9 @@ class AnnotationTool:
         self.state: AnnotationState | None = None
 
         # Interaction state
-        self.mode = "select"  # select, add, delete
+        self.mode = "select"  # select, add, delete, post
         self.selected_row_idx: int | None = None
+        self.posts: list[tuple[float, float]] = []  # strainer post positions (session-only)
         self.dragging_cp: bool = False
         self.drag_cp_idx: int | None = None
         self.drag_start_xy: tuple[float, float] | None = None
@@ -500,8 +512,8 @@ class AnnotationTool:
         self.fig.subplots_adjust(left=0.02, right=0.85, top=0.95, bottom=0.05)
 
         # Mode radio buttons
-        ax_radio = self.fig.add_axes([0.87, 0.7, 0.12, 0.12])
-        self.radio = RadioButtons(ax_radio, ["Select", "Add", "Delete"], active=0)
+        ax_radio = self.fig.add_axes([0.87, 0.68, 0.12, 0.16])
+        self.radio = RadioButtons(ax_radio, ["Select", "Add", "Delete", "Post"], active=0)
         self.radio.on_clicked(self._on_mode_change)
 
         # Buttons
@@ -529,8 +541,19 @@ class AnnotationTool:
         self.btn_complete = Button(ax_complete, "Mark Complete (M)")
         self.btn_complete.on_clicked(lambda _: self._mark_complete())
 
+        # Post mode buttons (initially hidden)
+        ax_generate = self.fig.add_axes([0.87, 0.28, 0.12, 0.04])
+        self.btn_generate = Button(ax_generate, "Generate (G)")
+        self.btn_generate.on_clicked(lambda _: self._generate_rows_from_posts())
+        ax_generate.set_visible(False)
+
+        ax_clear_posts = self.fig.add_axes([0.87, 0.22, 0.12, 0.04])
+        self.btn_clear_posts = Button(ax_clear_posts, "Clear Posts (C)")
+        self.btn_clear_posts.on_clicked(lambda _: self._clear_posts())
+        ax_clear_posts.set_visible(False)
+
         # Info text area
-        self.ax_info = self.fig.add_axes([0.87, 0.05, 0.12, 0.28])
+        self.ax_info = self.fig.add_axes([0.87, 0.05, 0.12, 0.14])
         self.ax_info.axis("off")
 
         # Connect events
@@ -638,6 +661,26 @@ class AnnotationTool:
                     )
                     self.cp_artists.append(sc)
 
+        # Draw strainer posts and tentative pairing lines
+        if self.posts:
+            pairs, unpaired = self._pair_posts()
+            unpaired_set = set(unpaired)
+
+            # Tentative pairing lines (dashed green)
+            for pi, pj in pairs:
+                x0, y0 = self.posts[pi]
+                x1, y1 = self.posts[pj]
+                self.ax.plot([x0, x1], [y0, y1], color=COLOR_POST,
+                             linewidth=1.0, linestyle="--", alpha=0.5, zorder=4)
+
+            # Post markers
+            for k, (px, py) in enumerate(self.posts):
+                self.ax.scatter([px], [py], c=COLOR_POST, s=60, zorder=6,
+                                edgecolors=COLOR_CP_EDGE, linewidths=1.5, marker="o")
+                if k in unpaired_set:
+                    self.ax.scatter([px], [py], facecolors="none", s=120, zorder=7,
+                                    edgecolors=COLOR_POST_UNPAIRED, linewidths=2.0, marker="o")
+
         # Restore view bounds
         if self._saved_xlim is not None:
             self.ax.set_xlim(self._saved_xlim)
@@ -693,7 +736,17 @@ class AnnotationTool:
             "Q=Quit",
         ]
 
-        if self.selected_row_idx is not None and self.selected_row_idx < len(s.rows):
+        if self.mode == "post":
+            pairs, unpaired = self._pair_posts()
+            lines.insert(4, "")
+            lines.insert(5, f"Posts: {len(self.posts)} placed")
+            lines.insert(6, f"Pairs: {len(pairs)} found")
+            if unpaired:
+                lines.insert(7, f"Unpaired: {len(unpaired)}")
+            lines.append("")
+            lines.append("T=Post G=Generate")
+            lines.append("C=Clear posts")
+        elif self.selected_row_idx is not None and self.selected_row_idx < len(s.rows):
             r = s.rows[self.selected_row_idx]
             n_pts = len(r.centerline_px)
             lines.insert(4, "")
@@ -736,8 +789,12 @@ class AnnotationTool:
     def _on_mode_change(self, label: str):
         self.mode = label.lower()
         self.selected_row_idx = None
+        # Toggle post mode buttons
+        show_post = self.mode == "post"
+        self.btn_generate.ax.set_visible(show_post)
+        self.btn_clear_posts.ax.set_visible(show_post)
         self._update_title()
-        self.fig.canvas.draw_idle()
+        self._redraw_all()
 
     def _on_press(self, event):
         if event.inaxes != self.ax or event.xdata is None:
@@ -796,6 +853,9 @@ class AnnotationTool:
             row_idx, dist = nearest_row_and_distance(self.state, event.xdata, event.ydata)
             if row_idx is not None and dist < threshold:
                 self._delete_row(row_idx)
+
+        elif self.mode == "post":
+            self._place_post(event.xdata, event.ydata)
 
     def _on_release(self, event):
         if self.panning:
@@ -897,6 +957,14 @@ class AnnotationTool:
             self.radio.set_active(1)
         elif event.key == "d":
             self.radio.set_active(2)
+        elif event.key == "t":
+            self.radio.set_active(3)
+        elif event.key == "g":
+            if self.mode == "post":
+                self._generate_rows_from_posts()
+        elif event.key == "c":
+            if self.mode == "post":
+                self._clear_posts()
         elif event.key == "escape":
             self.radio.set_active(0)
             self.selected_row_idx = None
@@ -1035,6 +1103,167 @@ class AnnotationTool:
         self._redraw_all()
         logger.info("Removed control point at index %d from row #%d", cp_idx, row.id)
 
+    # --- Strainer Post Mode ---
+
+    def _place_post(self, x: float, y: float):
+        """Place a strainer post marker at the clicked position."""
+        self.posts.append((x, y))
+        self._redraw_all()
+        logger.debug("Placed post #%d at (%.1f, %.1f)", len(self.posts), x, y)
+
+    def _pair_posts(self) -> tuple[list[tuple[int, int]], list[int]]:
+        """Pair posts into rows using greedy perp-proximity grouping.
+
+        Returns (pairs, unpaired_indices).
+        """
+        posts = self.posts
+        n = len(posts)
+        if n < 2:
+            return [], list(range(n))
+
+        angle_rad = math.radians(self.state.angle_deg)
+        row_dx, row_dy = math.cos(angle_rad), math.sin(angle_rad)
+        perp_dx, perp_dy = -math.sin(angle_rad), math.cos(angle_rad)
+
+        # Project posts onto along-row and perpendicular axes
+        projections = []
+        for i, (x, y) in enumerate(posts):
+            along = x * row_dx + y * row_dy
+            perp = x * perp_dx + y * perp_dy
+            projections.append((i, along, perp))
+
+        # Sort by perp position
+        projections.sort(key=lambda p: p[2])
+
+        # Compute tolerance
+        tolerance = self._compute_post_tolerance(projections)
+        if tolerance is None:
+            return [], list(range(n))
+
+        # Group by perp proximity
+        groups: list[list[tuple[int, float, float]]] = [[projections[0]]]
+        for j in range(1, len(projections)):
+            gap = abs(projections[j][2] - projections[j - 1][2])
+            if gap > tolerance:
+                groups.append([projections[j]])
+            else:
+                groups[-1].append(projections[j])
+
+        # Pair within each group: take the two with largest along-distance
+        pairs = []
+        unpaired = []
+        for group in groups:
+            if len(group) == 1:
+                unpaired.append(group[0][0])
+            elif len(group) == 2:
+                pairs.append((group[0][0], group[1][0]))
+            else:
+                # 3+ posts in one row group: pair the two extremes
+                group.sort(key=lambda p: p[1])  # sort by along
+                pairs.append((group[0][0], group[-1][0]))
+                for p in group[1:-1]:
+                    unpaired.append(p[0])
+
+        return pairs, unpaired
+
+    def _compute_post_tolerance(self, projections: list[tuple[int, float, float]]) -> float | None:
+        """Derive perp-grouping tolerance from existing rows or post spacing.
+
+        Returns tolerance in pixels, or None if insufficient data.
+        """
+        # Option 1: derive from existing annotated/detected rows
+        if len(self.state.rows) >= 2:
+            angle_rad = math.radians(self.state.angle_deg)
+            pdx, pdy = -math.sin(angle_rad), math.cos(angle_rad)
+            cx, cy = self.state.image_size[0] / 2.0, self.state.image_size[1] / 2.0
+            perps = []
+            for row in self.state.rows:
+                if row.centerline_px:
+                    mean_p = float(np.mean(
+                        [(x - cx) * pdx + (y - cy) * pdy for x, y in row.centerline_px]
+                    ))
+                    perps.append(mean_p)
+            perps.sort()
+            if len(perps) >= 2:
+                spacings = [perps[i + 1] - perps[i] for i in range(len(perps) - 1)]
+                return float(np.median(spacings)) * POST_PAIR_TOLERANCE_FACTOR
+
+        # Option 2: derive from post projections (need >= 4 for 2 rows)
+        if len(projections) >= 4:
+            sorted_perps = [p[2] for p in projections]
+            diffs = [sorted_perps[i + 1] - sorted_perps[i] for i in range(len(sorted_perps) - 1)]
+            # Filter out within-row gaps (keep inter-row gaps)
+            p90 = float(np.percentile(diffs, 90)) if len(diffs) >= 2 else max(diffs)
+            big_diffs = [d for d in diffs if d > p90 * 0.3]
+            if big_diffs:
+                return float(np.median(big_diffs)) * POST_PAIR_TOLERANCE_FACTOR
+
+        # Not enough data
+        logger.warning("Cannot compute post tolerance: need 2+ existing rows or 4+ posts")
+        return None
+
+    def _generate_rows_from_posts(self):
+        """Generate row annotations from paired strainer posts."""
+        if len(self.posts) < 2:
+            logger.warning("Need at least 2 posts to generate rows")
+            return
+
+        pairs, unpaired = self._pair_posts()
+        if not pairs:
+            logger.warning("No valid pairs found — check post placement and spacing")
+            return
+
+        if unpaired:
+            logger.info("Generating %d rows; %d posts unpaired", len(pairs), len(unpaired))
+
+        saved_posts = list(self.posts)
+        generated_ids = []
+        generated_rows = []
+
+        for pi, pj in pairs:
+            p1 = self.posts[pi]
+            p2 = self.posts[pj]
+            new_id = self.state.next_id
+            row = RowData(id=new_id, centerline_px=[p1, p2], origin="manual")
+            self.state.rows.append(row)
+            generated_ids.append(new_id)
+            generated_rows.append({"id": new_id, "centerline_px": [p1, p2]})
+
+        self.state.sort_rows()
+        self.state.dirty = True
+        if self.state.status == "pending":
+            self.state.status = "modified"
+
+        action = Action(
+            type="generate_posts", row_id=-1,
+            generated_row_ids=generated_ids,
+            generated_rows=generated_rows,
+            saved_posts=saved_posts,
+        )
+        self.state.undo_stack.append(action)
+        self.state.redo_stack.clear()
+
+        self.posts.clear()
+        self.radio.set_active(0)  # back to Select mode
+        self._redraw_all()
+        logger.info("Generated %d rows from %d posts", len(pairs), len(saved_posts))
+
+    def _clear_posts(self):
+        """Clear all placed posts (undoable)."""
+        if not self.posts:
+            return
+
+        action = Action(
+            type="clear_posts", row_id=-1,
+            saved_posts=list(self.posts),
+        )
+        self.state.undo_stack.append(action)
+        self.state.redo_stack.clear()
+
+        self.posts.clear()
+        self._redraw_all()
+        logger.info("Cleared all posts")
+
     def _undo(self):
         if not self.state.undo_stack:
             return
@@ -1057,6 +1286,18 @@ class AnnotationTool:
                 )
                 self.state.rows.append(row)
                 self.state.sort_rows()
+
+        elif action.type == "generate_posts":
+            # Remove all generated rows, restore posts
+            if action.generated_row_ids:
+                id_set = set(action.generated_row_ids)
+                self.state.rows = [r for r in self.state.rows if r.id not in id_set]
+            if action.saved_posts:
+                self.posts = list(action.saved_posts)
+
+        elif action.type == "clear_posts":
+            if action.saved_posts:
+                self.posts = list(action.saved_posts)
 
         self.state.redo_stack.append(action)
         self.state.dirty = True
@@ -1081,6 +1322,18 @@ class AnnotationTool:
 
         elif action.type == "delete":
             self.state.rows = [r for r in self.state.rows if r.id != action.row_id]
+
+        elif action.type == "generate_posts":
+            # Re-create rows from stored data, clear posts
+            if action.generated_rows:
+                for rd in action.generated_rows:
+                    row = RowData(id=rd["id"], centerline_px=list(rd["centerline_px"]), origin="manual")
+                    self.state.rows.append(row)
+                self.state.sort_rows()
+            self.posts.clear()
+
+        elif action.type == "clear_posts":
+            self.posts.clear()
 
         self.state.undo_stack.append(action)
         self.state.dirty = True
