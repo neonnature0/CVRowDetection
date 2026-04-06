@@ -39,6 +39,7 @@
     <a href="#library"  :class="{ active: $store.app.view === 'library' }">Library</a>
     <a href="#train"    :class="{ active: $store.app.view === 'train' }">Train</a>
     <a href="#verify"   :class="{ active: $store.app.view === 'verify' }">Verify</a>
+    <button class="help-btn" @click="$store.app.toggleWelcome()" title="How to use this app">?</button>
   </nav>
 
   <!-- Main content area -->
@@ -46,6 +47,11 @@
 
     <!-- Map View (Add Blocks) — use x-show to keep DOM alive for MapLibre -->
     <div class="view-map" x-show="$store.app.view === 'map'">
+      <div class="tab-help tab-help-map" x-show="$store.app.isTabHelpVisible('map')" x-transition.opacity>
+        <span class="tab-help-icon">i</span>
+        <span class="tab-help-text">Draw vineyard block boundaries on the map. Click to place polygon points, double-click to finish. Then click <b>Save Block</b>.</span>
+        <button class="tab-help-dismiss" @click="$store.app.dismissTabHelp('map')">&times;</button>
+      </div>
       <div id="map-container"></div>
       <div class="map-sidebar">
         <h3>Blocks</h3>
@@ -62,6 +68,12 @@
 
     <!-- Annotate View -->
     <div x-show="$store.app.view === 'annotate'" class="annotate-container" x-data="annotateView">
+
+      <div class="tab-help" x-show="$store.app.isTabHelpVisible('annotate')" x-transition.opacity>
+        <span class="tab-help-icon">i</span>
+        <span class="tab-help-text">Step through detected blocks sequentially. <b>Accept</b> auto-detected rows, <b>Edit</b> to correct them in the annotation editor (save with S, then close), or <b>Skip</b> to move on.</span>
+        <button class="tab-help-dismiss" @click="$store.app.dismissTabHelp('annotate')">&times;</button>
+      </div>
 
       <!-- Empty queue -->
       <template x-if="queue.length === 0">
@@ -154,6 +166,11 @@
 
     <!-- Library View -->
     <div x-show="$store.app.view === 'library'" class="library-container" x-data="libraryView">
+      <div class="tab-help" x-show="$store.app.isTabHelpVisible('library')" x-transition.opacity>
+        <span class="tab-help-icon">i</span>
+        <span class="tab-help-text">All your blocks in one place. <b>Detect</b> runs the row detection pipeline, <b>Tune</b> adjusts parameters with before/after comparison, <b>Blind</b> creates unbiased ground truth annotations.</span>
+        <button class="tab-help-dismiss" @click="$store.app.dismissTabHelp('library')">&times;</button>
+      </div>
       <!-- Filter bar -->
       <div class="library-toolbar">
         <span style="font-size: 13px; color: var(--text-muted);">Filter:</span>
@@ -186,6 +203,18 @@
                     x-text="block.stage || 'draft'"></span>
             </div>
 
+            <!-- Difficulty rating -->
+            <div class="card-difficulty">
+              <span class="difficulty-label">Difficulty:</span>
+              <template x-for="n in [1,2,3,4,5]" :key="n">
+                <button class="difficulty-dot"
+                        :class="{ 'difficulty-active': block.difficulty_rating >= n }"
+                        :title="difficultyLabels[n]"
+                        @click="setDifficulty(block.name, block.difficulty_rating === n ? null : n)"
+                        x-text="n"></button>
+              </template>
+            </div>
+
             <!-- Actions -->
             <div class="card-actions">
               <button class="btn btn-primary btn-sm"
@@ -213,6 +242,11 @@
     <!-- Train View -->
     <div x-show="$store.app.view === 'train'" class="train-container" x-data="trainView">
       <div class="train-panel">
+        <div class="tab-help" x-show="$store.app.isTabHelpVisible('train')" x-transition.opacity style="margin: -16px -16px 16px; border-radius: 12px 12px 0 0; border-bottom: 1px solid rgba(74,158,255,0.15);">
+          <span class="tab-help-icon">i</span>
+          <span class="tab-help-text">First generate training patches from your annotations, then train the ML model. Watch progress live. After training, clear detections to re-detect with the improved model.</span>
+          <button class="tab-help-dismiss" @click="$store.app.dismissTabHelp('train')">&times;</button>
+        </div>
         <h2>ML Training</h2>
 
         <!-- Stats -->
@@ -317,6 +351,11 @@
 
     <!-- Verify View -->
     <div x-show="$store.app.view === 'verify'" class="verify-container" x-data="verifyView">
+      <div class="tab-help" x-show="$store.app.isTabHelpVisible('verify')" x-transition.opacity>
+        <span class="tab-help-icon">i</span>
+        <span class="tab-help-text">Batch-check detection quality on random blocks. Review overlays and confidence scores to find blocks that need attention.</span>
+        <button class="tab-help-dismiss" @click="$store.app.dismissTabHelp('verify')">&times;</button>
+      </div>
       <div class="verify-toolbar">
         <span style="font-weight: 600;">Visual Verification</span>
         <label style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
@@ -481,8 +520,9 @@
                 <img :src="defaultOverlayUrl()" alt="before" class="tune-image"
                      @click="$store.lightbox.open(defaultOverlayUrl())">
                 <img x-show="showDiff"
-                     :src="'/api/detection/' + blockName + '/tuned-lines?t=' + Date.now()"
-                     alt="diff" class="tune-diff-layer">
+                     :src="diffLinesUrl()"
+                     alt="diff" class="tune-diff-layer"
+                     @error="showDiff = false">
               </div>
             </div>
             <div>
@@ -492,6 +532,77 @@
             </div>
           </div>
         </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Welcome / Getting Started Overlay -->
+  <div class="welcome-overlay" x-show="$store.app.showWelcome" x-cloak
+       x-transition.opacity.duration.200ms
+       @click.self="$store.app.dismissWelcome()"
+       @keydown.escape.window="if ($store.app.showWelcome && !$store.lightbox.visible) $store.app.dismissWelcome()">
+
+    <div class="welcome-panel">
+      <h1>CVRowDetection</h1>
+      <p class="welcome-subtitle">Detect vineyard row positions from aerial imagery. Follow the workflow below to get started.</p>
+
+      <div class="welcome-section-title">Workflow</div>
+      <div class="workflow-steps">
+        <div class="workflow-connector"></div>
+        <div class="workflow-step">
+          <div class="workflow-num">1</div>
+          <div class="workflow-step-title">Add Blocks</div>
+          <div class="workflow-step-desc">Draw vineyard block polygons on the satellite map</div>
+        </div>
+        <div class="workflow-step">
+          <div class="workflow-num">2</div>
+          <div class="workflow-step-title">Detect & Review</div>
+          <div class="workflow-step-desc">Run detection, then accept, edit, or tune the results</div>
+        </div>
+        <div class="workflow-step">
+          <div class="workflow-num">3</div>
+          <div class="workflow-step-title">Train Model</div>
+          <div class="workflow-step-desc">Generate patches from annotations and train the ML model</div>
+        </div>
+        <div class="workflow-step">
+          <div class="workflow-num">4</div>
+          <div class="workflow-step-title">Verify</div>
+          <div class="workflow-step-desc">Batch-check random blocks to confirm detection quality</div>
+        </div>
+      </div>
+
+      <div class="welcome-section-title">Tips for Best Results</div>
+      <div class="tips-grid">
+        <div class="tip-item">
+          <span class="tip-icon">1</span>
+          <span><strong>Draw tight polygons</strong> &mdash; exclude buildings, roads, and non-vineyard areas from block boundaries</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">2</span>
+          <span><strong>Use Blind annotation</strong> &mdash; creates unbiased ground truth, avoiding circular dependency with the ML model</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">3</span>
+          <span><strong>Centre on canopy, not brightness</strong> &mdash; sun angle shifts the bright side off-center from the actual row</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">4</span>
+          <span><strong>Annotate diverse blocks</strong> &mdash; a few challenging blocks teach more than ten easy ones</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">5</span>
+          <span><strong>Tune on one block first</strong> &mdash; experiment with the Tune panel, then apply your best settings as defaults</span>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">6</span>
+          <span><strong>Enable Ensemble Confidence</strong> &mdash; when ML and Gabor agree, detection is reliable; disagreement flags blocks for review</span>
+        </div>
+      </div>
+
+      <div class="welcome-footer">
+        <button class="btn btn-primary" style="padding: 10px 32px; font-size: 14px;" @click="$store.app.dismissWelcome()">
+          Get Started
+        </button>
       </div>
     </div>
   </div>

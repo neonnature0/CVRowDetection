@@ -74,6 +74,7 @@ def create_block(boundary: dict) -> dict:
             "stage": "draft",
             "last_detection_at": None,
             "thumbnail_path": None,
+            "difficulty_rating": None,
         }
         blocks.append(block)
         data["blocks"] = blocks

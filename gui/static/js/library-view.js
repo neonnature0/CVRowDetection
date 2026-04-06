@@ -117,5 +117,22 @@ document.addEventListener('alpine:init', () => {
     expand(name) {
       this.expandedBlock = this.expandedBlock === name ? null : name;
     },
+
+    difficultyLabels: {
+      1: 'Easy — high contrast, bare inter-rows, straight rows, no confounders',
+      2: 'Moderate — minor challenges (slight curvature, some grass)',
+      3: 'Average — typical real-world block with mixed conditions',
+      4: 'Hard — significant challenges (dense inter-row vegetation, curves, shadows)',
+      5: 'Very hard — multiple confounders (dirt paths, trees, sun angle issues, L-shapes)',
+    },
+
+    async setDifficulty(name, rating) {
+      try {
+        await API.patch('/api/blocks/' + name + '/difficulty', { difficulty_rating: rating });
+        await this.$store.app.refreshBlocks();
+      } catch (e) {
+        console.error('Failed to set difficulty:', e);
+      }
+    },
   }));
 });

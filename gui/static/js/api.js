@@ -16,6 +16,14 @@ const API = {
     return res.json();
   },
 
+  async patch(path, body = null) {
+    const opts = { method: 'PATCH', headers: { 'Content-Type': 'application/json' } };
+    if (body !== null) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    if (!res.ok) throw new Error(`PATCH ${path}: ${res.status}`);
+    return res.json();
+  },
+
   async del(path) {
     const res = await fetch(path, { method: 'DELETE' });
     if (!res.ok) throw new Error(`DELETE ${path}: ${res.status}`);
