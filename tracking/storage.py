@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import shutil
 import subprocess
 import threading
@@ -41,15 +42,18 @@ _lock = threading.Lock()
 
 
 def generate_run_id() -> str:
-    """Generate a run ID: {ISO timestamp}_{7-char git hash}[-dirty].
+    """Generate a unique run ID: {timestamp-ms}_{random}_{git hash}[-dirty].
 
-    Example: 2026-04-06T14-23-11_a3f2c1 or 2026-04-06T14-23-11_a3f2c1-dirty
+    Example: 2026-04-06T14-23-11-042_a1b2_abc1234
+    All characters are URL-safe (alphanumeric, hyphens, underscores).
     """
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    now = datetime.now(timezone.utc)
+    ts = now.strftime("%Y-%m-%dT%H-%M-%S") + f"-{now.microsecond // 1000:03d}"
+    rand = secrets.token_hex(2)  # 4 hex chars
     commit = _git_short_hash()
     dirty = _git_is_dirty()
     suffix = f"{commit}-dirty" if dirty else commit
-    return f"{ts}_{suffix}"
+    return f"{ts}_{rand}_{suffix}"
 
 
 def get_git_info() -> tuple[str, bool]:
