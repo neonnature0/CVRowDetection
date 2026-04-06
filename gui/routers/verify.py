@@ -28,7 +28,8 @@ def _run_verify_batch(blocks: list[dict]):
     """Run detection on a batch of blocks (called in background thread)."""
     global _verify_results, _verify_progress, _verify_running
 
-    _verify_results = []
+    with _verify_lock:
+        _verify_results = []
     total = len(blocks)
 
     for i, block in enumerate(blocks):
@@ -39,14 +40,14 @@ def _run_verify_batch(blocks: list[dict]):
         # Use cached result if available, otherwise run detection
         cached = detection_cache.load_cached_result(name)
         if cached:
-            _verify_results.append({
+            entry = {
                 "name": name,
                 "row_count": cached.get("row_count", 0),
                 "confidence": cached.get("overall_confidence", 0),
                 "spacing_m": cached.get("mean_spacing_m", 0),
                 "overlay_url": f"/api/detection/{name}/overlay",
                 "cached": True,
-            })
+            }
         else:
             result_tuple = detect_block(block)
             if result_tuple:
@@ -58,27 +59,30 @@ def _run_verify_batch(blocks: list[dict]):
                 # Update block stage
                 block_registry.update_block(name, {"stage": "detected"})
 
-                _verify_results.append({
+                entry = {
                     "name": name,
                     "row_count": result.row_count,
                     "confidence": round(result.overall_confidence, 3),
                     "spacing_m": round(result.mean_spacing_m, 3),
                     "overlay_url": f"/api/detection/{name}/overlay",
                     "cached": False,
-                })
+                }
             else:
-                _verify_results.append({
+                entry = {
                     "name": name,
                     "row_count": 0,
                     "confidence": 0,
                     "spacing_m": 0,
                     "overlay_url": "",
                     "error": "Detection failed",
-                })
+                }
+
+        with _verify_lock:
+            _verify_results.append(entry)
 
     with _verify_lock:
         _verify_progress = {"status": "complete", "done": total, "total": total, "current": ""}
-    _verify_running = False
+        _verify_running = False
 
 
 @router.post("/run")
@@ -86,8 +90,10 @@ async def run_verify(n: int = 10):
     """Start batch verification on N random blocks."""
     global _verify_running
 
-    if _verify_running:
-        return {"status": "already_running"}
+    with _verify_lock:
+        if _verify_running:
+            return {"status": "already_running"}
+        _verify_running = True
 
     blocks = block_registry.list_blocks()
     if n >= len(blocks):
@@ -95,7 +101,6 @@ async def run_verify(n: int = 10):
     else:
         selected = random.sample(blocks, n)
 
-    _verify_running = True
     thread = threading.Thread(target=_run_verify_batch, args=(selected,), daemon=True)
     thread.start()
 
@@ -120,4 +125,5 @@ async def verify_progress():
 @router.get("/results")
 def verify_results():
     """Return the latest verification results."""
-    return _verify_results
+    with _verify_lock:
+        return list(_verify_results)
