@@ -92,8 +92,8 @@ def _ensure_annotation(name: str):
         source_name = auto_select_source(lng)
         zoom = default_zoom(source_name)
         mpp = meters_per_pixel(lat, zoom, TILE_SOURCES[source_name].tile_size)
-    except Exception:
-        pass
+    except (KeyError, ValueError, ImportError) as e:
+        logger.warning("Could not compute mpp for block %s: %s", name, e)
 
     annotation = {
         "block_name": name,
@@ -218,8 +218,8 @@ def prepare_blind_annotation(name: str):
         source_name = auto_select_source(lng)
         zoom = default_zoom(source_name)
         mpp = meters_per_pixel(lat, zoom, TILE_SOURCES[source_name].tile_size)
-    except Exception as e:
-        logger.warning("Could not compute mpp for blind annotation: %s", e)
+    except (KeyError, ValueError, ImportError) as e:
+        logger.warning("Could not compute mpp for blind annotation of %s: %s", name, e)
 
     # Create annotation with ZERO rows (blind)
     annotation = {

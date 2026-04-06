@@ -441,9 +441,10 @@ def _fit_single_row(
         # Use weights proportional to candidate strength
         weights = np.maximum(strength_arr, 0.1)  # don't let weights go to zero
         spline = UnivariateSpline(along_arr, perp_arr, w=weights, s=s_factor, k=3)
-    except Exception:
-        # Spline fitting failed — fall back to linear
-        logger.debug("Spline fitting failed for track %d, using linear", trajectory.track_id)
+    except (ValueError, TypeError) as e:
+        # Spline fitting failed — fall back to linear. Logged at WARNING so
+        # degraded rows are visible (was DEBUG, which hid silent failures).
+        logger.warning("Spline fitting failed for track %d (%s), using linear fallback", trajectory.track_id, e)
         p1 = (matched[0][1].x, matched[0][1].y)
         p2 = (matched[-1][1].x, matched[-1][1].y)
         return FittedRow(

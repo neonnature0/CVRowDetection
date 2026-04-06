@@ -33,7 +33,7 @@ def _count_annotated() -> int:
             data = json.loads(f.read_text(encoding="utf-8"))
             if data.get("metadata", {}).get("status") == "complete":
                 count += 1
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             pass
     return count
 
@@ -105,8 +105,8 @@ def stop_training():
             data = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
             data["status"] = "stopped"
             PROGRESS_FILE.write_text(json.dumps(data), encoding="utf-8")
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to update progress file on stop: %s", e)
 
     return {"status": "stopped"}
 
@@ -128,8 +128,8 @@ async def training_progress():
                         yield f"data: {json.dumps(data)}\n\n"
                     if data.get("status") in ("complete", "stopped", "failed"):
                         return
-                except Exception:
-                    pass
+                except (json.JSONDecodeError, OSError):
+                    pass  # SSE loop — skip one tick on read error
 
             if status == "exited" or status == "not_started":
                 # Training ended but no progress file update — send final event

@@ -696,8 +696,8 @@ def main():
                 blocks = _load_test_blocks()
                 difficulty_map = {b["name"]: b.get("difficulty_rating") for b in blocks}
                 region_map = {b["name"]: b.get("region") for b in blocks}
-            except Exception:
-                pass
+            except (OSError, KeyError, json.JSONDecodeError) as e:
+                logger.warning("Could not load block registry for tracking metadata: %s", e)
 
             record = build_run_record(
                 run_type="evaluation",
@@ -716,7 +716,7 @@ def main():
             )
             append_block_results(block_records)
             print(f"  Tracking: recorded run {record['run_id']} ({len(results)} blocks)")
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, ImportError) as e:
             logger.warning("Failed to record tracking data: %s", e)
 
     sys.exit(0 if results else 1)
