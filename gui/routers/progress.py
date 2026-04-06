@@ -94,6 +94,9 @@ def compare_runs(old_run_id: str, new_run_id: str):
 
     Uses intersection of block IDs evaluated in both runs.
     """
+    if old_run_id == new_run_id:
+        raise HTTPException(400, "Cannot compare a run with itself")
+
     all_results = storage.load_block_results()
 
     old_blocks = {r["block_id"]: r for r in all_results if r.get("run_id") == old_run_id}
@@ -207,6 +210,68 @@ def compare_runs(old_run_id: str, new_run_id: str):
     }
 
 
+@router.get("/trajectories")
+def trajectories(limit: int = 5, history: int = 10):
+    """Return trajectories for the worst blocks from the latest evaluated run.
+
+    - Picks up to `limit` worst blocks by f1_04 from the newest run that has
+      per-block results.
+    - For each selected block, returns up to `history` most recent trajectory
+      points across all runs.
+    """
+    if limit < 1:
+        limit = 1
+    if history < 1:
+        history = 1
+
+    all_results = storage.load_block_results()
+    if not all_results:
+        return {"blocks": [], "latest_run_id": None}
+
+    # Find newest run that has per-block results
+    by_run: dict[str, list[dict]] = {}
+    for r in all_results:
+        rid = r.get("run_id")
+        if rid:
+            by_run.setdefault(rid, []).append(r)
+    if not by_run:
+        return {"blocks": [], "latest_run_id": None}
+
+    runs = storage.load_runs()
+    latest_run_id = None
+    latest_run_blocks: list[dict] = []
+    for run in runs:  # newest first
+        rid = run.get("run_id")
+        if rid and rid in by_run:
+            latest_run_id = rid
+            latest_run_blocks = by_run[rid]
+            break
+
+    if latest_run_id is None or not latest_run_blocks:
+        return {"blocks": [], "latest_run_id": None}
+
+    sortable = [r for r in latest_run_blocks if r.get("f1_04") is not None]
+    sortable.sort(key=lambda r: r.get("f1_04", 1.0))
+    selected = sortable[:limit]
+
+    blocks_payload = []
+    for rec in selected:
+        bid = rec.get("block_id")
+        if not bid:
+            continue
+        traj = [r for r in all_results if r.get("block_id") == bid]
+        traj.sort(key=lambda r: r.get("timestamp", ""))
+        recent = traj[-history:]
+        blocks_payload.append({
+            "block_id": bid,
+            "latest_f1_04": rec.get("f1_04"),
+            "n_runs": len(recent),
+            "data": recent,
+        })
+
+    return {"blocks": blocks_payload, "latest_run_id": latest_run_id}
+
+
 @router.get("/region-summary")
 def region_summary():
     """Return per-region block counts and F1 over time for the Regions panel.
@@ -281,27 +346,19 @@ def calibration_data(run_id: str):
     If per-row confidence data is not available for this run, returns
     {"available": false, "reason": "..."}.
     """
-    # Per-row confidence data is not stored in the tracking files —
-    # it would need to be computed live by re-running evaluation.
-    # For now, check if the run has ECE computed (which implies confidence data existed).
     run = storage.get_run(run_id)
     if run is None:
         raise HTTPException(404, f"Run '{run_id}' not found")
 
     metrics = run.get("aggregate_metrics") or {}
-    ece = metrics.get("ece")
+    ece = metrics.get("ece", None)
+    bins = metrics.get("calibration_bins")
+    if not bins:
+        return {"available": False, "reason": "Calibration bin data not available for this run."}
 
-    if ece is None:
-        return {
-            "available": False,
-            "reason": "Per-row confidence scores were not available when this run was recorded.",
-        }
-
-    # Calibration bins are not stored per-run — return a placeholder
-    # that indicates ECE was computed but bins aren't available for historical runs.
-    # Live calibration would require re-running the pipeline.
     return {
-        "available": False,
-        "reason": "Calibration bin data is not stored for historical runs. ECE was computed as aggregate only.",
+        "available": True,
         "ece": ece,
+        "bins": bins,
+        "run_id": run_id,
     }

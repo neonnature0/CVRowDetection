@@ -18,6 +18,10 @@ document.addEventListener('alpine:init', () => {
     // Block trajectories
     worstBlocks: [],
     trajectoryCharts: {},
+    calibrationRunId: '',
+    calibrationData: null,
+    calibrationMsg: '',
+    calibrationChart: null,
 
     // Regions
     regionCounts: [],
@@ -83,6 +87,13 @@ document.addEventListener('alpine:init', () => {
     async loadRuns() {
       try {
         this.runs = await API.get('/api/progress/runs');
+        if (!this.compareOld && this.runs.length >= 2) {
+          this.compareOld = this.runs[1].run_id;
+          this.compareNew = this.runs[0].run_id;
+        }
+        if (!this.calibrationRunId && this.runs.length > 0) {
+          this.calibrationRunId = this.runs[0].run_id;
+        }
       } catch (e) {
         console.error('Failed to load runs:', e);
       }
@@ -279,44 +290,14 @@ document.addEventListener('alpine:init', () => {
 
     async loadTrajectories() {
       try {
-        // Get worst blocks from latest run
-        const latestRun = this.runs.find(r => r.aggregate_metrics);
-        if (!latestRun) {
+        const data = await API.get('/api/progress/trajectories?limit=5&history=10');
+        const blocks = data.blocks || [];
+        if (blocks.length === 0) {
           this.worstBlocks = [];
           return;
         }
-
-        // Load all block results and find the 5 worst from latest run
-        const allResults = await API.get('/api/progress/runs/' + latestRun.run_id);
-        // We need per-block data — load from block results
-        const blockResults = [];
-        // Get block results for this run from the full list
-        const response = await fetch('/api/progress/runs');
-        // Instead, get the worst block from aggregate
-        const worstId = latestRun.aggregate_metrics.worst_block_id;
-
-        // Load trajectories for worst blocks (we know worst from all runs)
-        // Get unique block IDs from all runs that have evaluations
-        const allBlockData = await fetch('/api/progress/block-trajectory/' + (worstId || ''));
-
-        // Simpler approach: get the 5 worst blocks from per-block results
-        this.worstBlocks = [];
-        if (!worstId) return;
-
-        // Get all blocks from latest run's per-block data
-        // We need a different approach — get all per-block results
-        const perBlockRes = await fetch('/api/progress/block-trajectory/' + worstId);
-        const trajectory = await perBlockRes.json();
-
-        // For now, show the worst block's trajectory
-        if (trajectory.length > 0) {
-          this.worstBlocks = [{
-            block_id: worstId,
-            n_runs: Math.min(trajectory.length, 10),
-            data: trajectory.slice(-10),
-          }];
-          this.$nextTick(() => this.renderTrajectoryCharts());
-        }
+        this.worstBlocks = blocks;
+        this.$nextTick(() => this.renderTrajectoryCharts());
       } catch (e) {
         console.error('Failed to load trajectories:', e);
       }
@@ -376,6 +357,76 @@ document.addEventListener('alpine:init', () => {
       } finally {
         this.comparing = false;
       }
+    },
+
+    async loadCalibration(runId = null) {
+      const rid = runId || this.calibrationRunId;
+      if (!rid) return;
+      this.calibrationData = null;
+      this.calibrationMsg = '';
+      if (this.calibrationChart) {
+        this.calibrationChart.destroy();
+        this.calibrationChart = null;
+      }
+      try {
+        const data = await API.get('/api/progress/calibration/' + encodeURIComponent(rid));
+        this.calibrationData = data;
+        if (!data.available) {
+          this.calibrationMsg = data.reason || 'Calibration data unavailable.';
+          return;
+        }
+        this.$nextTick(() => this.renderCalibrationChart());
+      } catch (e) {
+        this.calibrationMsg = 'Failed to load calibration: ' + e.message;
+      }
+    },
+
+    renderCalibrationChart() {
+      if (!this.calibrationData || !this.calibrationData.available) return;
+      const bins = this.calibrationData.bins || [];
+      const canvas = document.getElementById('calibration-chart');
+      if (!canvas || bins.length === 0) return;
+      if (this.calibrationChart) {
+        this.calibrationChart.destroy();
+      }
+
+      const labels = bins.map(b => b.bin_center != null ? b.bin_center.toFixed(2) : '');
+      const accuracy = bins.map(b => b.accuracy);
+      const meanConf = bins.map(b => b.mean_confidence);
+
+      this.calibrationChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            {
+              type: 'bar',
+              label: 'Accuracy',
+              data: accuracy,
+              backgroundColor: 'rgba(74,158,255,0.5)',
+              borderColor: '#4a9eff',
+              borderWidth: 1,
+            },
+            {
+              type: 'line',
+              label: 'Mean confidence',
+              data: meanConf,
+              borderColor: '#f39c12',
+              pointRadius: 2,
+              spanGaps: false,
+              tension: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: '#e0e0e0' } } },
+          scales: {
+            x: { title: { display: true, text: 'Confidence bin center', color: '#888' }, ticks: { color: '#888' }, grid: { color: '#333' } },
+            y: { min: 0, max: 1, ticks: { color: '#888' }, grid: { color: '#333' } },
+          },
+        },
+      });
     },
   }));
 });

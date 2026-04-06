@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_REGIONS_CACHE: list[dict] | None = None
+_REGIONS_CACHE: dict[Path, list[dict]] = {}
 _DEFAULT_REGIONS_PATH = Path(__file__).resolve().parent.parent / "data" / "nz_wine_regions.json"
 
 
@@ -21,12 +21,11 @@ def load_regions(path: str | Path | None = None) -> list[dict]:
 
     Each entry must have: name (str), lat (float), lng (float).
     """
-    global _REGIONS_CACHE
-
     resolved = Path(path) if path else _DEFAULT_REGIONS_PATH
+    resolved = resolved.resolve()
 
-    if _REGIONS_CACHE is not None:
-        return _REGIONS_CACHE
+    if resolved in _REGIONS_CACHE:
+        return _REGIONS_CACHE[resolved]
 
     if not resolved.exists():
         logger.warning("Regions file not found: %s", resolved)
@@ -51,7 +50,7 @@ def load_regions(path: str | Path | None = None) -> list[dict]:
         else:
             logger.warning("Skipping invalid region entry: %s", entry)
 
-    _REGIONS_CACHE = valid
+    _REGIONS_CACHE[resolved] = valid
     return valid
 
 
@@ -115,7 +114,8 @@ def detect_region(
     """
     regions = load_regions(regions_path)
     if not regions:
-        return {"region": "Other", "distance_km": 0.0, "confidence": "low"}
+        logger.error("No region reference data available; cannot assign region")
+        return {"region": None, "distance_km": 0.0, "confidence": "low"}
 
     lat, lng = compute_block_centroid(boundary)
 

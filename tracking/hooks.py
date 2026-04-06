@@ -15,6 +15,7 @@ import numpy as np
 from tracking import storage
 from tracking.metrics import (
     bootstrap_confidence_interval,
+    calibration_bins,
     expected_calibration_error,
 )
 
@@ -82,6 +83,7 @@ def build_run_record(
         worst_idx = int(np.argmin(f1_04))
 
         ece = expected_calibration_error(per_row_confidences, per_row_correctness)
+        bins = calibration_bins(per_row_confidences, per_row_correctness)
 
         aggregate = {
             "mean_f1_04": round(float(np.mean(f1_04)), 4),
@@ -94,6 +96,7 @@ def build_run_record(
             "mean_localization_error_m": round(float(np.mean(loc_errors)), 4),
             "mean_shape_distance_m": round(float(np.mean(shape_errors)), 4),
             "ece": ece,
+            "calibration_bins": bins,
             "total_blocks_evaluated": len(eval_results),
             "failure_mode_counts": failure_counts,
         }
