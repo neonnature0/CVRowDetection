@@ -446,7 +446,7 @@
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'learning' }" @click="panel = 'learning'; loadLearningCurve()">Learning Curve</button>
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'trajectories' }" @click="panel = 'trajectories'; loadTrajectories()">Block Trajectories</button>
         <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'compare' }" @click="panel = 'compare'">Compare Runs</button>
-        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'calibration' }" @click="panel = 'calibration'">Calibration</button>
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'calibration' }" @click="panel = 'calibration'; loadCalibration()">Calibration</button>
       </div>
 
       <!-- Panel 1: Runs Timeline -->
@@ -476,7 +476,7 @@
                     <td x-text="fmtCI(run, 'mean_f1_02')"></td>
                     <td x-text="fmtCI(run, 'mean_f1_01')"></td>
                     <td x-text="run.aggregate_metrics && run.aggregate_metrics.ece != null ? run.aggregate_metrics.ece.toFixed(3) : '—'"></td>
-                    <td x-text="run.aggregate_metrics ? (run.aggregate_metrics.worst_block_f1_04 * 100).toFixed(0) + '%' : '—'"></td>
+                    <td x-text="run.aggregate_metrics && run.aggregate_metrics.worst_block_f1_04 != null ? (run.aggregate_metrics.worst_block_f1_04 * 100).toFixed(0) + '%' : '—'"></td>
                     <td x-text="fmtFailures(run)"></td>
                   </tr>
                 </template>
@@ -651,8 +651,28 @@
 
       <!-- Panel 5: Calibration -->
       <div class="progress-panel" x-show="panel === 'calibration'">
-        <div style="max-width: 500px; margin: 0 auto; text-align: center; padding: 48px 0;">
-          <p style="color: var(--text-muted);">Reliability diagram unavailable — per-run calibration bin data is not yet stored. ECE is computed as an aggregate value in each run record.</p>
+        <div style="max-width: 700px; margin: 0 auto;">
+          <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px;">
+            <select x-model="calibrationRunId" class="tune-select" style="flex: 1;">
+              <option value="">Select run...</option>
+              <template x-for="run in runs" :key="'cal-' + run.run_id">
+                <option :value="run.run_id" x-text="formatDate(run.timestamp) + ' (' + run.run_type + ')'"></option>
+              </template>
+            </select>
+            <button class="btn btn-primary btn-sm" @click="loadCalibration(calibrationRunId)" :disabled="!calibrationRunId">
+              Load
+            </button>
+          </div>
+
+          <div x-show="calibrationMsg" style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;" x-text="calibrationMsg"></div>
+          <template x-if="calibrationData && calibrationData.available">
+            <div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+                ECE: <span x-text="calibrationData.ece != null ? calibrationData.ece.toFixed(3) : '—'"></span>
+              </div>
+              <canvas id="calibration-chart" height="280"></canvas>
+            </div>
+          </template>
         </div>
       </div>
 

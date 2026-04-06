@@ -177,6 +177,8 @@ class EvalResult:
     false_negatives: int
     time_s: float
     is_blind: bool = False
+    row_confidences: list[float] = field(default_factory=list)
+    row_correctness: list[bool] = field(default_factory=list)
 
 
 def match_rows(
@@ -327,6 +329,8 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
             spacing_error_pct=None, angle_error_deg=None,
             false_positives=0, false_negatives=n_gt, time_s=elapsed,
             is_blind=is_blind,
+            row_confidences=[],
+            row_correctness=[],
         )
 
     # Extract detected perpendicular positions and polylines
@@ -346,12 +350,14 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
     det_perps = [det_perps[i] for i in sorted_det]
     det_polylines = [det_polylines[i] for i in sorted_det]
     n_det = len(det_perps)
+    det_confidences = [float(result.rows[i].confidence) for i in sorted_det]
 
     # Match at loose threshold (primary)
     matched, unmatched_gt, unmatched_det, distances = match_rows(
         gt_perps, det_perps, mpp, THRESHOLD_LOOSE,
     )
     n_matched = len(matched)
+    matched_det_set = {di for _, di in matched}
 
     precision = n_matched / n_det if n_det > 0 else 0.0
     recall = n_matched / n_gt if n_gt > 0 else 0.0
@@ -407,6 +413,8 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
         false_negatives=len(unmatched_gt),
         time_s=round(elapsed, 1),
         is_blind=is_blind,
+        row_confidences=[round(c, 4) for c in det_confidences],
+        row_correctness=[j in matched_det_set for j in range(n_det)],
     )
 
 
@@ -688,6 +696,8 @@ def main():
             record = build_run_record(
                 run_type="evaluation",
                 eval_results=results,
+                per_row_confidences=[c for r in results for c in (r.row_confidences or [])],
+                per_row_correctness=[c for r in results for c in (r.row_correctness or [])],
                 block_region_map=region_map,
             )
             append_run(record)
