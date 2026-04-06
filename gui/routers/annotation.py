@@ -12,6 +12,7 @@ import cv2
 from fastapi import APIRouter, HTTPException
 
 from gui.config import ANNOTATIONS_DIR, IMAGES_DIR, DETECTIONS_DIR
+from gui.routers._validation import validate_block_name
 from gui.services import block_registry, detection_cache, task_runner
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,7 @@ def get_annotation_queue():
 @router.get("/{name}")
 def get_annotation(name: str):
     """Get the annotation JSON for a block."""
+    name = validate_block_name(name)
     path = _annotation_path(name)
     if not path.exists():
         raise HTTPException(404, "No annotation file for this block")
@@ -146,6 +148,7 @@ def get_annotation(name: str):
 @router.post("/{name}")
 def save_annotation(name: str, data: dict):
     """Save annotation JSON for a block."""
+    name = validate_block_name(name)
     ANNOTATIONS_DIR.mkdir(parents=True, exist_ok=True)
     path = _annotation_path(name)
     with open(path, "w", encoding="utf-8") as f:
@@ -163,6 +166,7 @@ def prepare_blind_annotation(name: str):
     The user will draw all rows from scratch in annotate.py without
     seeing any pipeline output. This produces unbiased ground truth.
     """
+    name = validate_block_name(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
@@ -260,6 +264,7 @@ def launch_editor(name: str):
     detection results. The matplotlib window opens in its own OS window.
     Poll /editor-status to check when it exits.
     """
+    name = validate_block_name(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(404, f"Block '{name}' not found")
@@ -287,6 +292,7 @@ def editor_status(name: str, mtime_before: float | None = None):
       - {"status": "skipped"} — exited without saving
       - {"status": "not_started"} — no editor was launched
     """
+    name = validate_block_name(name)
     status = task_runner.check_editor_status(name)
 
     if status == "running":

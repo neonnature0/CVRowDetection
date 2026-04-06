@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from gui.routers._validation import validate_block_name
 from gui.services import block_registry
 
 router = APIRouter()
@@ -29,6 +30,7 @@ def list_blocks():
 
 @router.get("/{name}")
 def get_block(name: str):
+    name = validate_block_name(name)
     block = block_registry.get_block(name)
     if block is None:
         raise HTTPException(status_code=404, detail=f"Block '{name}' not found")
@@ -42,6 +44,7 @@ def create_block(req: CreateBlockRequest):
 
 @router.patch("/{name}/difficulty")
 def set_difficulty(name: str, req: SetDifficultyRequest):
+    name = validate_block_name(name)
     if req.difficulty_rating is not None and not (1 <= req.difficulty_rating <= 5):
         raise HTTPException(status_code=400, detail="difficulty_rating must be 1–5 or null")
     updated = block_registry.update_block(name, {"difficulty_rating": req.difficulty_rating})
@@ -52,6 +55,7 @@ def set_difficulty(name: str, req: SetDifficultyRequest):
 
 @router.patch("/{name}/region")
 def set_region(name: str, req: SetRegionRequest):
+    name = validate_block_name(name)
     updated = block_registry.update_block(name, {
         "region": req.region,
         "region_auto_detected": False,
@@ -71,6 +75,7 @@ def list_regions():
 
 @router.delete("/{name}")
 def delete_block(name: str):
+    name = validate_block_name(name)
     if not block_registry.delete_block(name):
         raise HTTPException(status_code=404, detail=f"Block '{name}' not found")
     return {"status": "deleted", "name": name}
