@@ -24,21 +24,41 @@ RUNS_FILE = TRACKING_DIR / "runs.json"
 BLOCK_RESULTS_FILE = TRACKING_DIR / "per_block_results.json"
 
 _lock = threading.Lock()
+_run_id_lock = threading.Lock()
+_last_run_ts_ms = ""
+_last_run_seq = -1
 
 
 # ── Run ID generation ──
 
 
 def generate_run_id() -> str:
-    """Generate a run ID: {ISO timestamp}_{7-char git hash}[-dirty].
+    """Generate a run ID: {ISO timestamp-ms}_{7-char git hash}[-dirty]_s{seq}.
 
-    Example: 2026-04-06T14-23-11_a3f2c1 or 2026-04-06T14-23-11_a3f2c1-dirty
+    Example:
+      2026-04-06T14-23-11-372_a3f2c1_s0000
+      2026-04-06T14-23-11-372_a3f2c1_s0001
+      2026-04-06T14-23-11-372_a3f2c1-dirty_s0002
     """
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    ts, seq = _next_run_ts_and_seq()
     commit = _git_short_hash()
     dirty = _git_is_dirty()
     suffix = f"{commit}-dirty" if dirty else commit
-    return f"{ts}_{suffix}"
+    return f"{ts}_{suffix}_s{seq:04d}"
+
+
+def _next_run_ts_and_seq() -> tuple[str, int]:
+    """Return millisecond UTC timestamp plus per-ms sequence number."""
+    global _last_run_ts_ms, _last_run_seq
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%f")[:-3]
+    with _run_id_lock:
+        if ts == _last_run_ts_ms:
+            _last_run_seq += 1
+        else:
+            _last_run_ts_ms = ts
+            _last_run_seq = 0
+        return ts, _last_run_seq
 
 
 def get_git_info() -> tuple[str, bool]:
