@@ -231,7 +231,10 @@ def main():
     # Test-only mode
     if args.run_test and args.checkpoint:
         state = torch.load(args.checkpoint, map_location=device, weights_only=True)
-        model.load_state_dict(state)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
 
         test_ds = RowLikelihoodDataset(test_patches, test_targets, transform=get_val_transform())
         test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
@@ -395,6 +398,18 @@ def main():
         from tracking.hooks import build_run_record, build_block_records
         from tracking.storage import append_run, append_block_results
 
+        # Build region map from block registry for per-region metrics
+        region_map = {}
+        difficulty_map = {}
+        if eval_results:
+            try:
+                from vinerow.loaders.json_loader import load_test_blocks
+                blocks = load_test_blocks()
+                region_map = {b["name"]: b.get("region") for b in blocks}
+                difficulty_map = {b["name"]: b.get("difficulty_rating") for b in blocks}
+            except (OSError, KeyError, json.JSONDecodeError) as e:
+                print(f"  Warning: could not load block registry for region metadata: {e}")
+
         record = build_run_record(
             run_type="training",
             eval_results=eval_results,
@@ -403,7 +418,8 @@ def main():
             training_time_seconds=training_elapsed if isinstance(training_elapsed, float) else None,
             per_row_confidences=all_row_confidences,
             per_row_correctness=all_row_correctness,
-            notes=f"encoder={args.encoder}, decoder={args.decoder}, epochs={len(train_losses)}, best_dice={best_dice:.4f}",
+            notes=f"encoder={args.encoder}, decoder={args.decoder}, epochs={len(train_losses)}, best_dice={best_dice:.4f}, seed={args.seed}",
+            block_region_map=region_map,
         )
         append_run(record)
         print(f"  Tracking: recorded training run {record['run_id']}")
@@ -412,6 +428,8 @@ def main():
             block_records = build_block_records(
                 run_id=record["run_id"],
                 eval_results=eval_results,
+                block_difficulty_map=difficulty_map,
+                block_region_map=region_map,
             )
             append_block_results(block_records)
     except Exception as e:
@@ -419,7 +437,11 @@ def main():
 
     # Final test evaluation with best model
     if test_patches:
-        model.load_state_dict(torch.load(output_dir / "best_model.pth", map_location=device, weights_only=True))
+        state = torch.load(output_dir / "best_model.pth", map_location=device, weights_only=True)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"])
+        else:
+            model.load_state_dict(state)
         test_ds = RowLikelihoodDataset(test_patches, test_targets, transform=get_val_transform())
         test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
         test_loss, test_dice = run_evaluation(model, test_loader, bce_loss, dice_loss, device)

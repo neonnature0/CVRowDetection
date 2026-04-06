@@ -32,57 +32,69 @@ def _run_verify_batch(blocks: list[dict]):
         _verify_results = []
     total = len(blocks)
 
-    for i, block in enumerate(blocks):
-        name = block["name"]
-        with _verify_lock:
-            _verify_progress = {"status": "running", "done": i, "total": total, "current": name}
+    try:
+        for i, block in enumerate(blocks):
+            name = block["name"]
+            with _verify_lock:
+                _verify_progress = {"status": "running", "done": i, "total": total, "current": name}
 
-        # Use cached result if available, otherwise run detection
-        cached = detection_cache.load_cached_result(name)
-        if cached:
-            entry = {
-                "name": name,
-                "row_count": cached.get("row_count", 0),
-                "confidence": cached.get("overall_confidence", 0),
-                "spacing_m": cached.get("mean_spacing_m", 0),
-                "overlay_url": f"/api/detection/{name}/overlay",
-                "cached": True,
-            }
-        else:
-            result_tuple = detect_block(block)
-            if result_tuple:
-                image_bgr, mask, result, mpp = result_tuple
-                overlay = generate_overlay(image_bgr, mask, result, mpp, block_name=name)
-                thumbnail = generate_thumbnail(overlay)
-                detection_cache.save_result(name, result, image_bgr, overlay, thumbnail)
+            # Use cached result if available, otherwise run detection
+            try:
+                cached = detection_cache.load_cached_result(name)
+                if cached:
+                    entry = {
+                        "name": name,
+                        "row_count": cached.get("row_count", 0),
+                        "confidence": cached.get("overall_confidence", 0),
+                        "spacing_m": cached.get("mean_spacing_m", 0),
+                        "overlay_url": f"/api/detection/{name}/overlay",
+                        "cached": True,
+                    }
+                else:
+                    result_tuple = detect_block(block)
+                    if result_tuple:
+                        image_bgr, mask, result, mpp = result_tuple
+                        overlay = generate_overlay(image_bgr, mask, result, mpp, block_name=name)
+                        thumbnail = generate_thumbnail(overlay)
+                        detection_cache.save_result(name, result, image_bgr, overlay, thumbnail)
 
-                # Update block stage
-                block_registry.update_block(name, {"stage": "detected"})
+                        # Update block stage
+                        block_registry.update_block(name, {"stage": "detected"})
 
-                entry = {
-                    "name": name,
-                    "row_count": result.row_count,
-                    "confidence": round(result.overall_confidence, 3),
-                    "spacing_m": round(result.mean_spacing_m, 3),
-                    "overlay_url": f"/api/detection/{name}/overlay",
-                    "cached": False,
-                }
-            else:
+                        entry = {
+                            "name": name,
+                            "row_count": result.row_count,
+                            "confidence": round(result.overall_confidence, 3),
+                            "spacing_m": round(result.mean_spacing_m, 3),
+                            "overlay_url": f"/api/detection/{name}/overlay",
+                            "cached": False,
+                        }
+                    else:
+                        entry = {
+                            "name": name,
+                            "row_count": 0,
+                            "confidence": 0,
+                            "spacing_m": 0,
+                            "overlay_url": "",
+                            "error": "Detection failed",
+                        }
+            except Exception as e:
+                logger.error("Verify failed for block %s: %s", name, e)
                 entry = {
                     "name": name,
                     "row_count": 0,
                     "confidence": 0,
                     "spacing_m": 0,
                     "overlay_url": "",
-                    "error": "Detection failed",
+                    "error": str(e),
                 }
 
+            with _verify_lock:
+                _verify_results.append(entry)
+    finally:
         with _verify_lock:
-            _verify_results.append(entry)
-
-    with _verify_lock:
-        _verify_progress = {"status": "complete", "done": total, "total": total, "current": ""}
-        _verify_running = False
+            _verify_progress = {"status": "complete", "done": total, "total": total, "current": ""}
+            _verify_running = False
 
 
 @router.post("/run")

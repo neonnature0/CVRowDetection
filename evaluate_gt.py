@@ -334,8 +334,17 @@ def evaluate_block(annotation_path: Path, config: PipelineConfig) -> EvalResult 
         )
 
     # Extract detected perpendicular positions and polylines
+    # Use actual image dimensions for detected row projection center —
+    # annotation image_size may differ if tile source/zoom changed since annotation
+    det_h, det_w = image_bgr.shape[:2]
+    if det_w != w or det_h != h:
+        logger.warning(
+            "Image size mismatch for %s: annotation says %dx%d, actual is %dx%d. "
+            "Using actual image center for detection projection.",
+            block_name, w, h, det_w, det_h,
+        )
     det_angle = result.dominant_angle_deg
-    cx_img, cy_img = w / 2.0, h / 2.0
+    cx_img, cy_img = det_w / 2.0, det_h / 2.0
     angle_rad = math.radians(det_angle)
     pdx, pdy = -math.sin(angle_rad), math.cos(angle_rad)
 
@@ -581,10 +590,12 @@ def generate_report(results: list[EvalResult], path: Path):
 
     for r in results_sorted:
         blind_tag = " [B]" if r.is_blind else ""
+        loc_str = f"{r.localization_error_m:.3f}" if r.localization_error_m is not None else "—"
+        shape_str = f"{r.shape_error_m:.3f}" if r.shape_error_m is not None else "—"
         lines.append(
             f"| {r.block}{blind_tag} | {r.n_det}/{r.n_gt} | "
             f"{r.f1 * 100:.1f}% | {r.f1_medium * 100:.1f}% | {r.f1_strict * 100:.1f}% | "
-            f"{r.localization_error_m:.3f} | {r.shape_error_m:.3f} | "
+            f"{loc_str} | {shape_str} | "
             f"{r.false_positives} | {r.false_negatives} |"
         )
 
@@ -595,7 +606,11 @@ def generate_report(results: list[EvalResult], path: Path):
         lines.append(f"- Total GT rows: {total_gt}")
         lines.append(f"- Mean F1 (loose): {np.mean([r.f1 for r in results]) * 100:.1f}%")
         lines.append(f"- Mean F1 (strict): {np.mean([r.f1_strict for r in results]) * 100:.1f}%")
-        lines.append(f"- Mean shape error: {np.mean([r.shape_error_m for r in results]):.3f}m")
+        shape_vals = [r.shape_error_m for r in results if r.shape_error_m is not None]
+        if shape_vals:
+            lines.append(f"- Mean shape error: {np.mean(shape_vals):.3f}m")
+        else:
+            lines.append("- Mean shape error: —")
 
     path.write_text("\n".join(lines), encoding="utf-8")
     logger.info("Report saved: %s", path)
@@ -664,9 +679,10 @@ def main():
         try:
             r = evaluate_block(f, config)
             if r:
+                shape_str = f"{r.shape_error_m:.3f}m" if r.shape_error_m is not None else "—"
                 print(
                     f" F1={r.f1 * 100:.0f}%/{r.f1_medium * 100:.0f}%/{r.f1_strict * 100:.0f}% "
-                    f"shape={r.shape_error_m:.3f}m"
+                    f"shape={shape_str}"
                 )
                 results.append(r)
             else:
