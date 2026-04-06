@@ -290,6 +290,7 @@ def _check_and_correct_phase(
                 perp_position=round(new_perp, 2),
                 strength=c.strength,
                 half_width_px=c.half_width_px,
+                likelihood=c.likelihood,
             ))
 
     logger.info(

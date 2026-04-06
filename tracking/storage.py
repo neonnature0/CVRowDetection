@@ -76,8 +76,12 @@ def _git_is_dirty() -> bool:
 def _read_json_array(path: Path) -> list[dict]:
     if not path.exists():
         return []
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        logger.warning("Corrupted JSON in %s; returning empty array", path)
+        return []
     if not isinstance(data, list):
         logger.warning("Expected JSON array in %s, got %s", path, type(data).__name__)
         return []
