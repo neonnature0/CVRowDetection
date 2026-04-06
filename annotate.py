@@ -541,19 +541,19 @@ class AnnotationTool:
         self.btn_complete = Button(ax_complete, "Mark Complete (M)")
         self.btn_complete.on_clicked(lambda _: self._mark_complete())
 
-        # Post mode buttons (initially hidden)
-        ax_generate = self.fig.add_axes([0.87, 0.28, 0.12, 0.04])
+        # Post mode buttons (initially hidden, stacked below Mark Complete)
+        ax_generate = self.fig.add_axes([0.87, 0.30, 0.12, 0.04])
         self.btn_generate = Button(ax_generate, "Generate (G)")
         self.btn_generate.on_clicked(lambda _: self._generate_rows_from_posts())
         ax_generate.set_visible(False)
 
-        ax_clear_posts = self.fig.add_axes([0.87, 0.22, 0.12, 0.04])
+        ax_clear_posts = self.fig.add_axes([0.87, 0.24, 0.12, 0.04])
         self.btn_clear_posts = Button(ax_clear_posts, "Clear Posts (C)")
         self.btn_clear_posts.on_clicked(lambda _: self._clear_posts())
         ax_clear_posts.set_visible(False)
 
         # Info text area
-        self.ax_info = self.fig.add_axes([0.87, 0.05, 0.12, 0.14])
+        self.ax_info = self.fig.add_axes([0.87, 0.05, 0.12, 0.18])
         self.ax_info.axis("off")
 
         # Connect events
@@ -716,48 +716,55 @@ class AnnotationTool:
         self.ax_info.axis("off")
         s = self.state
 
-        lines = [
-            f"Rows: {len(s.rows)}",
-            f"GT rows: {s.gt_row_count or 'N/A'}",
-            f"Angle: {s.angle_deg:.1f} deg",
-            f"GT spacing: {s.gt_spacing_m or 'N/A'}m",
-            "",
-            "LClick row = select",
-            "RDrag = pan",
-            "Scroll = zoom",
-            "Drag ctrl pt = adjust",
-            "RClick line = add pt",
-            "MClick pt = remove pt",
-            "",
-            "S=Save Z=Undo Y=Redo",
-            "A=Add D=Delete Esc=Sel",
-            "I=Insert pt X/Del=Rm pt",
-            "N/P=Next/Prev M=Done",
-            "Q=Quit",
-        ]
-
         if self.mode == "post":
             pairs, unpaired = self._pair_posts()
-            lines.insert(4, "")
-            lines.insert(5, f"Posts: {len(self.posts)} placed")
-            lines.insert(6, f"Pairs: {len(pairs)} found")
+            lines = [
+                f"Rows: {len(s.rows)}",
+                f"Angle: {s.angle_deg:.1f} deg",
+                "",
+                f"Posts: {len(self.posts)} placed",
+                f"Pairs: {len(pairs)} found",
+            ]
             if unpaired:
-                lines.insert(7, f"Unpaired: {len(unpaired)}")
-            lines.append("")
-            lines.append("T=Post G=Generate")
-            lines.append("C=Clear posts")
-        elif self.selected_row_idx is not None and self.selected_row_idx < len(s.rows):
-            r = s.rows[self.selected_row_idx]
-            n_pts = len(r.centerline_px)
-            lines.insert(4, "")
-            lines.insert(5, f"Sel: #{r.id} ({n_pts} pts)")
-            lines.insert(6, f"  {r.origin}" + (" [mod]" if r.modified else ""))
+                lines.append(f"Unpaired: {len(unpaired)}")
+            lines += [
+                "",
+                "LClick = place post",
+                "G = generate rows",
+                "C = clear posts",
+                "Z = undo  Esc = select",
+            ]
+        else:
+            lines = [
+                f"Rows: {len(s.rows)}",
+                f"GT rows: {s.gt_row_count or 'N/A'}",
+                f"Angle: {s.angle_deg:.1f} deg",
+                f"GT spacing: {s.gt_spacing_m or 'N/A'}m",
+            ]
+            if self.selected_row_idx is not None and self.selected_row_idx < len(s.rows):
+                r = s.rows[self.selected_row_idx]
+                n_pts = len(r.centerline_px)
+                lines += [
+                    "",
+                    f"Sel: #{r.id} ({n_pts} pts)",
+                    f"  {r.origin}" + (" [mod]" if r.modified else ""),
+                ]
+            lines += [
+                "",
+                "LClick = select/drag",
+                "RDrag = pan  Scroll = zoom",
+                "RClick line = add pt",
+                "",
+                "S=Save Z/Y=Undo/Redo",
+                "A=Add D=Del T=Post",
+                "N/P=Nav M=Done Q=Quit",
+            ]
 
         y = 0.95
         for line in lines:
             self.ax_info.text(0.0, y, line, fontsize=7.5, fontfamily="monospace",
                              transform=self.ax_info.transAxes, verticalalignment="top")
-            y -= 0.052
+            y -= 0.07
 
     # --- Helpers ---
 
