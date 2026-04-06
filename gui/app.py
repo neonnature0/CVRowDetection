@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 
-from gui.routers import annotation, blocks, detection, elevation, tiles, training, verify
+from gui.routers import annotation, blocks, detection, elevation, progress, tiles, training, verify
 
 
 def create_app() -> FastAPI:
@@ -29,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(training.router, prefix="/api/training", tags=["training"])
     app.include_router(elevation.router, prefix="/api/elevation", tags=["elevation"])
     app.include_router(verify.router, prefix="/api/verify", tags=["verify"])
+    app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
     app.include_router(tiles.router, prefix="/api/tiles", tags=["tiles"])
 
     # Static files (served last so API routes take priority)

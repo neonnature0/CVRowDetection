@@ -27,6 +27,10 @@
   <script src="/js/tune-panel.js"></script>
   <script src="/js/train-view.js"></script>
   <script src="/js/verify-view.js"></script>
+  <script src="/js/progress-view.js"></script>
+
+  <!-- Chart.js for Progress view charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 
 <body x-data x-init="$store.app.init()">
@@ -39,6 +43,7 @@
     <a href="#library"  :class="{ active: $store.app.view === 'library' }">Library</a>
     <a href="#train"    :class="{ active: $store.app.view === 'train' }">Train</a>
     <a href="#verify"   :class="{ active: $store.app.view === 'verify' }">Verify</a>
+    <a href="#progress" :class="{ active: $store.app.view === 'progress' }">Progress</a>
     <button class="help-btn" @click="$store.app.toggleWelcome()" title="How to use this app">?</button>
   </nav>
 
@@ -409,6 +414,176 @@
       <div x-show="state === 'idle' && results.length === 0" class="placeholder-view">
         Click "Run Verify" to check detection quality on random blocks.
       </div>
+    </div>
+
+    <!-- Progress View -->
+    <div x-show="$store.app.view === 'progress'" class="progress-container" x-data="progressView">
+
+      <!-- Small sample warning -->
+      <div class="tab-help" x-show="warningVisible" style="background: rgba(243,156,18,0.1); border-bottom-color: rgba(243,156,18,0.3);">
+        <span class="tab-help-icon" style="background: var(--warning);">!</span>
+        <span class="tab-help-text" x-text="warningText"></span>
+      </div>
+
+      <!-- Panel tabs -->
+      <div class="progress-tabs">
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'runs' }" @click="panel = 'runs'">Runs</button>
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'learning' }" @click="panel = 'learning'; loadLearningCurve()">Learning Curve</button>
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'trajectories' }" @click="panel = 'trajectories'; loadTrajectories()">Block Trajectories</button>
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'compare' }" @click="panel = 'compare'">Compare Runs</button>
+        <button class="btn btn-secondary btn-sm" :class="{ 'btn-active': panel === 'calibration' }" @click="panel = 'calibration'">Calibration</button>
+      </div>
+
+      <!-- Panel 1: Runs Timeline -->
+      <div class="progress-panel" x-show="panel === 'runs'">
+        <template x-if="runs.length === 0">
+          <div class="placeholder-view" style="height: auto; padding: 48px;">No runs recorded yet. Run an evaluation or train the model to generate tracking data.</div>
+        </template>
+        <template x-if="runs.length > 0">
+          <div class="runs-table-wrap">
+            <table class="runs-table">
+              <thead>
+                <tr>
+                  <th>Date</th><th>Type</th><th>Blocks</th>
+                  <th>F1 (0.4x)</th><th>F1 (0.2x)</th><th>F1 (0.1x)</th>
+                  <th>ECE</th><th>Worst</th><th>FP/FN</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="run in runs" :key="run.run_id">
+                  <tr @click="expandedRun = expandedRun === run.run_id ? null : run.run_id"
+                      style="cursor: pointer;"
+                      :class="{ 'run-expanded': expandedRun === run.run_id }">
+                    <td x-text="formatDate(run.timestamp)"></td>
+                    <td><span class="run-type-badge" :class="'run-type-' + run.run_type" x-text="run.run_type"></span></td>
+                    <td x-text="run.aggregate_metrics ? run.aggregate_metrics.total_blocks_evaluated : (run.train_set_size || '—')"></td>
+                    <td x-text="fmtCI(run, 'mean_f1_04')"></td>
+                    <td x-text="fmtCI(run, 'mean_f1_02')"></td>
+                    <td x-text="fmtCI(run, 'mean_f1_01')"></td>
+                    <td x-text="run.aggregate_metrics && run.aggregate_metrics.ece != null ? run.aggregate_metrics.ece.toFixed(3) : '—'"></td>
+                    <td x-text="run.aggregate_metrics ? (run.aggregate_metrics.worst_block_f1_04 * 100).toFixed(0) + '%' : '—'"></td>
+                    <td x-text="fmtFailures(run)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <!-- Expanded run details -->
+            <template x-if="expandedRun">
+              <div class="run-details">
+                <template x-if="expandedRunData">
+                  <div>
+                    <div class="run-detail-grid">
+                      <div><span class="metric-label">Run ID</span><span style="font-family: monospace; font-size: 11px;" x-text="expandedRunData.run_id"></span></div>
+                      <div><span class="metric-label">Git</span><span x-text="expandedRunData.git_commit + (expandedRunData.git_dirty ? '-dirty' : '')"></span></div>
+                      <div x-show="expandedRunData.training_time_seconds"><span class="metric-label">Training time</span><span x-text="Math.round(expandedRunData.training_time_seconds / 60) + ' min'"></span></div>
+                      <div x-show="expandedRunData.notes"><span class="metric-label">Notes</span><span x-text="expandedRunData.notes"></span></div>
+                    </div>
+                    <template x-if="Object.keys(expandedRunData.config_diff || {}).length > 0">
+                      <div style="margin-top: 8px;">
+                        <span class="metric-label">Config changes:</span>
+                        <div class="config-diff">
+                          <template x-for="[key, val] in Object.entries(expandedRunData.config_diff)" :key="key">
+                            <div><span style="color: var(--accent);" x-text="key"></span>: <span style="color: var(--danger);" x-text="val.old"></span> → <span style="color: var(--success);" x-text="val.new"></span></div>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- Panel 2: Learning Curve -->
+      <div class="progress-panel" x-show="panel === 'learning'">
+        <div style="max-width: 700px; margin: 0 auto;">
+          <canvas id="learning-curve-chart" height="300"></canvas>
+          <div style="margin-top: 12px; font-size: 12px; color: var(--text-muted); text-align: center;" x-text="learningCurveMsg"></div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Block Trajectories -->
+      <div class="progress-panel" x-show="panel === 'trajectories'">
+        <template x-if="worstBlocks.length === 0">
+          <div class="placeholder-view" style="height: auto; padding: 48px;">No block trajectory data available. Run evaluations to generate per-block tracking data.</div>
+        </template>
+        <template x-if="worstBlocks.length > 0">
+          <div class="trajectories-grid">
+            <template x-for="wb in worstBlocks" :key="wb.block_id">
+              <div class="trajectory-card">
+                <div class="trajectory-header">
+                  <span class="name" x-text="wb.block_id" style="cursor: pointer;" @click="window.location.hash = '#library'"></span>
+                  <span style="font-size: 10px; color: var(--text-muted);" x-text="wb.n_runs + '/10 runs'"></span>
+                </div>
+                <canvas :id="'traj-' + wb.block_id" height="120"></canvas>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <!-- Panel 4: Run Comparison -->
+      <div class="progress-panel" x-show="panel === 'compare'">
+        <div style="max-width: 700px; margin: 0 auto;">
+          <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px;">
+            <select x-model="compareOld" class="tune-select" style="flex: 1;">
+              <option value="">Select older run...</option>
+              <template x-for="run in runs" :key="run.run_id">
+                <option :value="run.run_id" x-text="formatDate(run.timestamp) + ' (' + run.run_type + ')'"></option>
+              </template>
+            </select>
+            <span style="color: var(--text-muted);">vs</span>
+            <select x-model="compareNew" class="tune-select" style="flex: 1;">
+              <option value="">Select newer run...</option>
+              <template x-for="run in runs" :key="run.run_id">
+                <option :value="run.run_id" x-text="formatDate(run.timestamp) + ' (' + run.run_type + ')'"></option>
+              </template>
+            </select>
+            <button class="btn btn-primary btn-sm" @click="runComparison()" :disabled="!compareOld || !compareNew || comparing">
+              <span x-text="comparing ? 'Comparing...' : 'Compare'"></span>
+            </button>
+          </div>
+
+          <!-- Comparison result -->
+          <template x-if="comparisonResult">
+            <div>
+              <div class="comparison-result" :class="comparisonResult.paired_test.significant ? 'comparison-significant' : 'comparison-not-significant'">
+                <div class="comparison-headline" x-text="comparisonHeadline"></div>
+                <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;"
+                     x-text="'Compared on ' + comparisonResult.n_blocks_compared + ' blocks (intersection of both runs)'"></div>
+              </div>
+
+              <!-- Per-block deltas table -->
+              <table class="runs-table" style="margin-top: 12px;">
+                <thead><tr><th>Block</th><th>Old F1</th><th>New F1</th><th>Delta</th></tr></thead>
+                <tbody>
+                  <template x-for="d in comparisonResult.per_block_deltas" :key="d.block_id">
+                    <tr>
+                      <td style="font-family: monospace;" x-text="d.block_id"></td>
+                      <td x-text="d.old_f1_04 != null ? (d.old_f1_04 * 100).toFixed(1) + '%' : '—'"></td>
+                      <td x-text="d.new_f1_04 != null ? (d.new_f1_04 * 100).toFixed(1) + '%' : '—'"></td>
+                      <td :style="'color:' + (d.delta > 0 ? 'var(--success)' : d.delta < 0 ? 'var(--danger)' : 'var(--text-muted)')"
+                          x-text="(d.delta > 0 ? '+' : '') + (d.delta * 100).toFixed(1) + '%'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <div x-show="comparisonError" style="color: var(--danger); font-size: 13px; margin-top: 12px;" x-text="comparisonError"></div>
+        </div>
+      </div>
+
+      <!-- Panel 5: Calibration -->
+      <div class="progress-panel" x-show="panel === 'calibration'">
+        <div style="max-width: 500px; margin: 0 auto; text-align: center; padding: 48px 0;">
+          <p style="color: var(--text-muted);">Reliability diagram unavailable — per-run calibration bin data is not yet stored. ECE is computed as an aggregate value in each run record.</p>
+        </div>
+      </div>
+
     </div>
 
   </main>
