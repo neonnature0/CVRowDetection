@@ -9,23 +9,30 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from gui.config import BLOCKS_FILE
+from gui.config import BLOCKS_FILE, BLOCKS_LOCAL_FILE
 
 logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 
 
+def _active_file() -> Path:
+    """Return the local override file if it exists, otherwise the tracked file."""
+    return BLOCKS_LOCAL_FILE if BLOCKS_LOCAL_FILE.exists() else BLOCKS_FILE
+
+
 def _read_raw() -> dict:
-    if not BLOCKS_FILE.exists():
+    path = _active_file()
+    if not path.exists():
         return {"blocks": []}
-    with open(BLOCKS_FILE, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def _write_raw(data: dict) -> None:
-    BLOCKS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(BLOCKS_FILE, "w", encoding="utf-8") as f:
+    path = _active_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 

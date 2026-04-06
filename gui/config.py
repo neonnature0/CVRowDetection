@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Data paths
 BLOCKS_FILE = PROJECT_ROOT / "data" / "blocks" / "test_blocks.json"
+BLOCKS_LOCAL_FILE = PROJECT_ROOT / "data" / "blocks" / "test_blocks.local.json"
 ANNOTATIONS_DIR = PROJECT_ROOT / "dataset" / "annotations"
 IMAGES_DIR = PROJECT_ROOT / "dataset" / "images"
 DETECTIONS_DIR = PROJECT_ROOT / "output" / "detections"
