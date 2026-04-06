@@ -61,6 +61,9 @@ def create_block(boundary: dict) -> dict:
         existing = {b["name"] for b in blocks}
         name = _generate_hex_name(existing)
 
+        # Auto-detect region from boundary
+        region_info = _detect_block_region(boundary)
+
         block = {
             "name": name,
             "vineyard_name": "",
@@ -75,6 +78,8 @@ def create_block(boundary: dict) -> dict:
             "last_detection_at": None,
             "thumbnail_path": None,
             "difficulty_rating": None,
+            "region": region_info["region"],
+            "region_auto_detected": True,
         }
         blocks.append(block)
         data["blocks"] = blocks
@@ -98,6 +103,55 @@ def delete_block(name: str) -> bool:
 
     logger.info("Deleted block %s", name)
     return True
+
+
+def backfill_regions() -> list[dict]:
+    """Backfill region field for all blocks that don't have one.
+
+    Called on first startup after the region feature lands.
+    Returns list of dicts: [{"name": ..., "region": ..., "distance_km": ..., "confidence": ...}]
+    """
+    assignments = []
+    with _lock:
+        data = _read_raw()
+        blocks = data.get("blocks", [])
+        changed = False
+
+        for b in blocks:
+            if b.get("region") is not None:
+                continue
+            info = _detect_block_region(b.get("boundary", {}))
+            b["region"] = info["region"]
+            b["region_auto_detected"] = True
+            changed = True
+            assignments.append({
+                "name": b["name"],
+                "region": info["region"],
+                "distance_km": info["distance_km"],
+                "confidence": info["confidence"],
+            })
+
+        if changed:
+            data["blocks"] = blocks
+            _write_raw(data)
+
+    for a in assignments:
+        logger.info(
+            "Backfill: %s → %s (%.1f km, %s)",
+            a["name"], a["region"], a["distance_km"], a["confidence"],
+        )
+
+    return assignments
+
+
+def _detect_block_region(boundary: dict) -> dict:
+    """Detect region for a boundary, with fallback on error."""
+    try:
+        from blocks.region_detection import detect_region
+        return detect_region(boundary)
+    except Exception as e:
+        logger.warning("Region detection failed: %s", e)
+        return {"region": None, "distance_km": 0.0, "confidence": "low"}
 
 
 def update_block(name: str, updates: dict) -> dict | None:

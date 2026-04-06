@@ -32,6 +32,18 @@ def create_app() -> FastAPI:
     app.include_router(progress.router, prefix="/api/progress", tags=["progress"])
     app.include_router(tiles.router, prefix="/api/tiles", tags=["tiles"])
 
+    # Backfill regions on startup for blocks that don't have one yet
+    @app.on_event("startup")
+    def _backfill_regions():
+        from gui.services.block_registry import backfill_regions
+        assignments = backfill_regions()
+        if assignments:
+            import logging
+            log = logging.getLogger("gui.startup")
+            log.info("Region backfill: %d blocks assigned", len(assignments))
+            for a in assignments:
+                log.info("  %s → %s (%.1f km, %s)", a["name"], a["region"], a["distance_km"], a["confidence"])
+
     # Static files (served last so API routes take priority)
     static_dir = Path(__file__).parent / "static"
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")

@@ -18,6 +18,10 @@ class SetDifficultyRequest(BaseModel):
     difficulty_rating: int | None  # 1–5 or null to clear
 
 
+class SetRegionRequest(BaseModel):
+    region: str | None  # region name or null to clear
+
+
 @router.get("")
 def list_blocks():
     return block_registry.list_blocks()
@@ -44,6 +48,25 @@ def set_difficulty(name: str, req: SetDifficultyRequest):
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Block '{name}' not found")
     return updated
+
+
+@router.patch("/{name}/region")
+def set_region(name: str, req: SetRegionRequest):
+    updated = block_registry.update_block(name, {
+        "region": req.region,
+        "region_auto_detected": False,
+    })
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Block '{name}' not found")
+    return updated
+
+
+@router.get("/meta/regions")
+def list_regions():
+    """Return all region names from the reference data (for dropdown population)."""
+    from blocks.region_detection import load_regions
+    regions = load_regions()
+    return [r["name"] for r in regions]
 
 
 @router.delete("/{name}")
