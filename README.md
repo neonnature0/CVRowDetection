@@ -134,8 +134,14 @@ gui/                  Browser-based GUI (FastAPI + Alpine.js)
 training/             ML model training (FPN + MobileNet-v2)
 tracking/             Progress tracking (storage, metrics, hooks)
 blocks/               Region detection logic
-block_detection/      Experimental block boundary detection (separate model)
 data/                 Region reference data, block registry
+models/               Model weights and checkpoint management notes
+tests/                Test suite
+
+# Optional external component (not present in this repo checkout)
+block_detection/      Experimental block-boundary detector; source is in repo history at commit
+                      47b8252 (`block_detection/` tree): 
+                      https://github.com/neonnature0/CVRowDetection/tree/47b8252c531e9569db6902208e9e0c28cb39ef27/block_detection
 ```
 
 ## Ridge Detection Modes
