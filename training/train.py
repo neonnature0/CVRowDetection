@@ -173,6 +173,8 @@ def main():
     parser.add_argument("--checkpoint", type=str, help="Checkpoint for test evaluation")
     parser.add_argument("--calibrate", action="store_true",
                         help="Run temperature scaling calibration after training")
+    parser.add_argument("--skip-eval", action="store_true",
+                        help="Skip post-training evaluation on held-out test set")
     args = parser.parse_args()
 
     # Override defaults when aligned or fpn
@@ -328,20 +330,78 @@ def main():
     print(f"\nTraining complete. Best val Dice: {best_dice:.4f}")
     print(f"Checkpoints saved to: {output_dir}")
 
+    # Post-training evaluation on held-out test set
+    eval_results = None
+    all_row_confidences = None
+    all_row_correctness = None
+
+    if not args.skip_eval and splits.get("test"):
+        import os
+        if not os.environ.get("LINZ_API_KEY"):
+            print("  LINZ_API_KEY not set, skipping post-training evaluation")
+        else:
+            try:
+                from evaluate_gt import evaluate_block
+                from vinerow.config import PipelineConfig as EvalConfig
+
+                eval_config = EvalConfig(
+                    ml_model_path=str(output_dir / "best_model.pth"),
+                    save_debug_artifacts=False,
+                )
+
+                ann_dir = Path("dataset/annotations")
+                eval_start = time.perf_counter()
+                eval_results = []
+
+                for block_name in splits["test"]:
+                    ann_path = ann_dir / f"{block_name}.json"
+                    if not ann_path.exists():
+                        continue
+                    try:
+                        r = evaluate_block(ann_path, eval_config)
+                        if r is not None:
+                            eval_results.append(r)
+                    except Exception as e:
+                        print(f"  Eval failed for {block_name}: {e}")
+
+                eval_time = time.perf_counter() - eval_start
+                print(f"  Post-training evaluation: {len(eval_results)} blocks in {eval_time:.1f}s")
+
+                if eval_results:
+                    all_row_confidences = [c for r in eval_results for c in (r.row_confidences or [])]
+                    all_row_correctness = [c for r in eval_results for c in (r.row_correctness or [])]
+                else:
+                    eval_results = None
+            except Exception as e:
+                print(f"  Warning: post-training evaluation failed: {e}")
+                eval_results = None
+    elif not splits.get("test"):
+        print("  No test split defined, skipping post-training evaluation")
+
     # Record to progress tracking
     try:
-        from tracking.hooks import build_run_record
-        from tracking.storage import append_run
+        from tracking.hooks import build_run_record, build_block_records
+        from tracking.storage import append_run, append_block_results
 
         record = build_run_record(
             run_type="training",
+            eval_results=eval_results,
             train_set_size=len(splits["train"]),
             train_block_ids=splits["train"],
             training_time_seconds=training_elapsed if isinstance(training_elapsed, float) else None,
+            per_row_confidences=all_row_confidences,
+            per_row_correctness=all_row_correctness,
             notes=f"encoder={args.encoder}, decoder={args.decoder}, epochs={len(train_losses)}, best_dice={best_dice:.4f}",
         )
         append_run(record)
         print(f"  Tracking: recorded training run {record['run_id']}")
+
+        if eval_results:
+            block_records = build_block_records(
+                run_id=record["run_id"],
+                eval_results=eval_results,
+            )
+            append_block_results(block_records)
     except Exception as e:
         print(f"  Warning: failed to record tracking data: {e}")
 
