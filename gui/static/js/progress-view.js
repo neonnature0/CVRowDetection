@@ -232,46 +232,43 @@ document.addEventListener('alpine:init', () => {
       }
 
       const pts = data.points.filter(p => p.mean_f1_04 != null);
-      const labels = pts.map(p => p.train_set_size);
 
+      // Use {x, y} point objects so all datasets share a proper numeric x-axis
       const datasets = [
-        { label: 'F1 (0.4x)', data: pts.map(p => p.mean_f1_04), borderColor: '#4a9eff', backgroundColor: 'rgba(74,158,255,0.1)' },
-        { label: 'F1 (0.2x)', data: pts.map(p => p.mean_f1_02), borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.1)' },
-        { label: 'F1 (0.1x)', data: pts.map(p => p.mean_f1_01), borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)' },
+        { label: 'F1 (0.4x)', data: pts.map(p => ({x: p.train_set_size, y: p.mean_f1_04})), borderColor: '#4a9eff', backgroundColor: 'rgba(74,158,255,0.1)' },
+        { label: 'F1 (0.2x)', data: pts.map(p => ({x: p.train_set_size, y: p.mean_f1_02})), borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.1)' },
+        { label: 'F1 (0.1x)', data: pts.map(p => ({x: p.train_set_size, y: p.mean_f1_01})), borderColor: '#f39c12', backgroundColor: 'rgba(243,156,18,0.1)' },
       ];
 
       // Add fitted curve if available
       if (data.fit) {
         const a = data.fit.a, b = data.fit.b, c = data.fit.c;
-        const maxSize = Math.max(...labels) * 1.5;
-        const fitX = [];
-        const fitY = [];
-        for (let x = Math.min(...labels); x <= maxSize; x += 1) {
-          fitX.push(x);
-          fitY.push(a - b * Math.pow(x, -c));
+        const sizes = pts.map(p => p.train_set_size);
+        const maxSize = Math.max(...sizes) * 1.5;
+        const fitData = [];
+        for (let x = Math.min(...sizes); x <= maxSize; x += 1) {
+          fitData.push({x: x, y: a - b * Math.pow(x, -c)});
         }
         datasets.push({
           label: 'Fitted (asymptote=' + (a * 100).toFixed(1) + '%)',
-          data: fitY,
+          data: fitData,
           borderColor: 'rgba(74,158,255,0.4)',
           borderDash: [6, 3],
           pointRadius: 0,
           fill: false,
         });
-        // Use fitX as labels for the fitted curve dataset
-        // Chart.js needs x-axis labels, so we use the actual data x values
       }
 
       this.learningChart = new Chart(canvas, {
         type: 'line',
-        data: { labels, datasets },
+        data: { datasets },
         options: {
           responsive: true,
           plugins: {
             legend: { labels: { color: '#e0e0e0', font: { size: 11 } } },
           },
           scales: {
-            x: { title: { display: true, text: 'Training set size (blocks)', color: '#888' }, ticks: { color: '#888' }, grid: { color: '#333' } },
+            x: { type: 'linear', title: { display: true, text: 'Training set size (blocks)', color: '#888' }, ticks: { color: '#888' }, grid: { color: '#333' } },
             y: { title: { display: true, text: 'Mean F1', color: '#888' }, ticks: { color: '#888' }, grid: { color: '#333' }, min: 0, max: 1 },
           },
         },
