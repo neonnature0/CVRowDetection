@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from gui.services import block_registry
+from gui.services import block_registry, detection_cache
 
 router = APIRouter()
 
@@ -71,6 +71,9 @@ def list_regions():
 
 @router.delete("/{name}")
 def delete_block(name: str):
+    detection_cache.invalidate_block(name)
     if not block_registry.delete_block(name):
+        detection_cache.invalidate_block(name)
         raise HTTPException(status_code=404, detail=f"Block '{name}' not found")
+    detection_cache.invalidate_block(name)
     return {"status": "deleted", "name": name}
