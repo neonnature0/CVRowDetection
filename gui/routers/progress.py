@@ -74,12 +74,16 @@ def learning_curve():
     points.sort(key=lambda p: p["train_set_size"])
 
     # Fit power-law curve if enough data
+    # Build aligned (size, score) pairs — only include points where both are present
     fit = None
-    if len(points) >= 4:
-        sizes = [p["train_set_size"] for p in points]
-        scores = [p["mean_f1_04"] for p in points if p["mean_f1_04"] is not None]
-        if len(scores) >= 4:
-            fit = fit_learning_curve(sizes[:len(scores)], scores)
+    paired = [
+        (p["train_set_size"], p["mean_f1_04"])
+        for p in points
+        if p["train_set_size"] is not None and p["mean_f1_04"] is not None
+    ]
+    if len(paired) >= 4:
+        sizes, scores = zip(*paired)
+        fit = fit_learning_curve(list(sizes), list(scores))
 
     return {
         "points": points,
