@@ -175,7 +175,18 @@ def main():
                         help="Run temperature scaling calibration after training")
     parser.add_argument("--skip-eval", action="store_true",
                         help="Skip post-training evaluation on held-out test set")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility (default: 42)")
     args = parser.parse_args()
+
+    # Set random seeds BEFORE any data loading or model creation
+    import random
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     # Override defaults when aligned or fpn
     data_dir = Path(args.data_dir)
@@ -312,6 +323,7 @@ def main():
         "n_train_patches": len(train_patches),
         "n_val_patches": len(val_patches),
         "patch_size": 256,
+        "seed": args.seed,
     }
     with open(output_dir / "training_config.json", "w") as f:
         json.dump(config, f, indent=2)
